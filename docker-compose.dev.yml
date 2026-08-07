@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gatehouse
+      POSTGRES_PASSWORD: gatehouse
+      POSTGRES_DB: gatehouse
+    ports:
+      - '5435:5432'
+    volumes:
+      - gatehouse-pgdata-dev:/var/lib/postgresql/data
+
+volumes:
+  gatehouse-pgdata-dev:

@@ -1,0 +1,24 @@
+# TLS termination for private-subnet deployments (no ALB).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+# Certs are issued on the host: certbot certonly --dns-route53 -d <domain>
+# deploy/*.conf holds one server block per protected app.
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - '443:443'
+    volumes:
+      - ./deploy:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - gatehouse
+    networks:
+      - default
+      - redash
+    restart: unless-stopped
+
+networks:
+  # Reach redash-server-1 directly so its port never needs host exposure.
+  redash:
+    external: true
+    name: redash_default

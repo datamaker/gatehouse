@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gatehouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gatehouse}
+      POSTGRES_DB: gatehouse
+    volumes:
+      - gatehouse-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gatehouse']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gatehouse:
+    build: .
+    ports:
+      - '${PORT:-9100}:9100'
+    environment:
+      DATABASE_URL: postgres://gatehouse:${POSTGRES_PASSWORD:-gatehouse}@postgres:5432/gatehouse
+      GATEHOUSE_PUBLIC_URL: ${GATEHOUSE_PUBLIC_URL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GATEHOUSE_ALLOWED_DOMAINS: ${GATEHOUSE_ALLOWED_DOMAINS:-datasee.co.kr}
+      GATEHOUSE_COOKIE_DOMAIN: ${GATEHOUSE_COOKIE_DOMAIN:-}
+      GATEHOUSE_COOKIE_SECRET: ${GATEHOUSE_COOKIE_SECRET:-}
+      GATEHOUSE_SESSION_TTL_HOURS: ${GATEHOUSE_SESSION_TTL_HOURS:-12}
+      GATEHOUSE_ADMIN_EMAILS: ${GATEHOUSE_ADMIN_EMAILS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  gatehouse-pgdata:
