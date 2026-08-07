@@ -15,10 +15,22 @@ services:
     networks:
       - default
       - redash
+      - pgsearch
+      - vault
+      - lookout
     restart: unless-stopped
 
 networks:
-  # Reach redash-server-1 directly so its port never needs host exposure.
+  # Join each app's compose network so their ports never need host exposure.
   redash:
     external: true
     name: redash_default
+  pgsearch:
+    external: true
+    name: pgsearch_default
+  vault:
+    external: true
+    name: secret-vault_vault-network
+  lookout:
+    external: true
+    name: lookout_default

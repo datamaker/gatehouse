@@ -140,6 +140,24 @@ http:
 | `GET /api/me` | 현재 사용자 JSON |
 | `GET /healthz` | 헬스체크 |
 
+## OIDC Provider (Phase 2)
+
+gatehouse는 사내 앱들의 OIDC IdP이기도 합니다. forward-auth가 안 되는 경우
+(다른 도메인의 앱, 네이티브 로그인 통합)에 사용하세요.
+
+- **issuer**: `https://auth.datasee.co.kr/oidc`
+- **discovery**: `{issuer}/.well-known/openid-configuration`
+- **flow**: authorization code + PKCE(필수), `client_secret_post`
+- **scopes**: `openid email profile` — email/name/picture는 id_token과 userinfo 양쪽에 포함
+- **sub**: gatehouse users.id (문자열)
+
+클라이언트 등록은 관리 콘솔 → "OIDC 클라이언트" 탭. secret은 생성 시 한 번만 표시됩니다.
+로그인/동의 화면은 없습니다 — gatehouse 세션이 있으면 리다이렉트만으로 완료되고,
+없으면 Google 로그인을 거쳐 자동 복귀합니다.
+
+토큰·코드·grant는 메모리 저장이라 서버 재시작 시 무효화됩니다(서명키는 DB 영속).
+앱은 자체 세션을 만들므로 재시작 영향은 "다음 로그인 때 리다이렉트 한 번" 수준입니다.
+
 ## 알려진 제약 (Phase 1)
 
 - 세션 쿠키는 **하나의 등록 도메인**(cookie domain)만 커버합니다. 현재는

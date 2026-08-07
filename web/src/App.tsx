@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { api, type Me } from './api';
 import { UsersPage } from './pages/UsersPage';
 import { AuditPage } from './pages/AuditPage';
+import { ClientsPage } from './pages/ClientsPage';
 
-type Tab = 'users' | 'audit';
+type Tab = 'users' | 'clients' | 'audit';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -36,11 +37,16 @@ export function App() {
             <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>
               사용자
             </button>
+            <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}>
+              OIDC 클라이언트
+            </button>
             <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
               감사 로그
             </button>
           </nav>
-          {tab === 'users' ? <UsersPage me={me} /> : <AuditPage />}
+          {tab === 'users' && <UsersPage me={me} />}
+          {tab === 'clients' && <ClientsPage />}
+          {tab === 'audit' && <AuditPage />}
         </>
       ) : (
         <div className="center">

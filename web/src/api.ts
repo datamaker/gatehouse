@@ -47,8 +47,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface OidcClient {
+  id: number;
+  client_id: string;
+  name: string;
+  redirect_uris: string[];
+  created_at: string;
+  client_secret?: string;
+}
+
 export const api = {
   me: () => request<Me>('/api/me'),
+  clients: () => request<OidcClient[]>('/api/admin/clients'),
+  createClient: (body: { client_id: string; name: string; redirect_uris: string[] }) =>
+    request<OidcClient>('/api/admin/clients', { method: 'POST', body: JSON.stringify(body) }),
+  deleteClient: (id: number) =>
+    request<{ deleted: boolean }>(`/api/admin/clients/${id}`, { method: 'DELETE' }),
   users: () => request<AdminUser[]>('/api/admin/users'),
   patchUser: (id: number, body: { is_active?: boolean; is_admin?: boolean }) =>
     request<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

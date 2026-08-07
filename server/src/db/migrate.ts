@@ -46,6 +46,25 @@ const migrations: { name: string; sql: string }[] = [
       ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT false;
     `,
   },
+  {
+    name: '003_oidc',
+    sql: `
+      CREATE TABLE oidc_clients (
+        id SERIAL PRIMARY KEY,
+        client_id TEXT UNIQUE NOT NULL,
+        client_secret TEXT NOT NULL,
+        name TEXT NOT NULL,
+        redirect_uris TEXT[] NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE oidc_jwks (
+        id SERIAL PRIMARY KEY,
+        jwk JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {

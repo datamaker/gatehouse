@@ -14,11 +14,14 @@
     "@fastify/cookie": "^9.4.0",
     "@fastify/static": "^7.0.4",
     "fastify": "^4.28.1",
+    "jose": "^6.2.8",
+    "oidc-provider": "^8.8.1",
     "openid-client": "^6.1.7",
     "pg": "^8.12.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
+    "@types/oidc-provider": "^9.11.0",
     "@types/pg": "^8.11.6",
     "tsx": "^4.16.2",
     "typescript": "^5.5.4"

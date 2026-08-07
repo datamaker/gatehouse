@@ -11,6 +11,8 @@ import { startSessionCleanup } from './auth/session.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerVerifyRoutes } from './routes/verify.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerOidcRoutes } from './routes/oidc.js';
+import { initOidc } from './oidc/provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,16 +27,22 @@ async function main(): Promise<void> {
 
   await app.register(cookie, { secret: config.cookieSecret });
 
-  // HTML form posts (e.g. the console's logout button). Bodies are ignored.
-  app.addContentTypeParser(
-    'application/x-www-form-urlencoded',
-    { parseAs: 'buffer' },
-    (_req, _body, done) => done(null, {}),
-  );
+  // HTML form posts (e.g. the console's logout button). Bodies are ignored —
+  // except under /oidc, where the stream must stay untouched so oidc-provider
+  // can parse token/revocation requests itself.
+  app.addContentTypeParser('application/x-www-form-urlencoded', (req, payload, done) => {
+    if (req.url.startsWith('/oidc')) return done(null, undefined);
+    payload.on('data', () => {});
+    payload.on('end', () => done(null, {}));
+    payload.on('error', done);
+  });
+
+  await initOidc();
 
   registerAuthRoutes(app);
   registerVerifyRoutes(app);
   registerAdminRoutes(app);
+  registerOidcRoutes(app);
 
   app.get('/healthz', async () => ({ ok: true }));
 
