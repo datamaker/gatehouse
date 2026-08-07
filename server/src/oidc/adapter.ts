@@ -93,18 +93,23 @@ async function findClient(clientId: string): Promise<Record<string, unknown> | u
     client_secret: string;
     name: string;
     redirect_uris: string[];
-  }>('SELECT client_id, client_secret, name, redirect_uris FROM oidc_clients WHERE client_id = $1', [
-    clientId,
-  ]);
+    grant_types: string[];
+    token_endpoint_auth_method: string;
+  }>(
+    `SELECT client_id, client_secret, name, redirect_uris, grant_types, token_endpoint_auth_method
+     FROM oidc_clients WHERE client_id = $1`,
+    [clientId],
+  );
   const c = rows[0];
   if (!c) return undefined;
+  const usesCode = c.grant_types.includes('authorization_code');
   return {
     client_id: c.client_id,
-    client_secret: c.client_secret,
     client_name: c.name,
-    redirect_uris: c.redirect_uris,
-    grant_types: ['authorization_code'],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'client_secret_post',
+    grant_types: c.grant_types,
+    response_types: usesCode ? ['code'] : [],
+    token_endpoint_auth_method: c.token_endpoint_auth_method,
+    ...(c.token_endpoint_auth_method === 'none' ? {} : { client_secret: c.client_secret }),
+    ...(c.redirect_uris.length > 0 ? { redirect_uris: c.redirect_uris } : {}),
   };
 }

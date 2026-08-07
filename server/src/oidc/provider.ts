@@ -42,6 +42,32 @@ export async function initOidc(): Promise<Provider> {
     conformIdTokenClaims: false,
     features: {
       devInteractions: { enabled: false },
+      // Device flow for browserless/native clients (opentunnel VPN):
+      // client shows a code, the user approves it at /oidc/device in a browser.
+      deviceFlow: {
+        enabled: true,
+        userCodeInputSource: async (ctx, form) => {
+          ctx.type = 'html';
+          ctx.body = devicePage(
+            '기기 로그인',
+            `<p>기기에 표시된 코드를 입력하세요.</p>${form}`,
+          );
+        },
+        userCodeConfirmSource: async (ctx, form, client, _deviceInfo, userCode) => {
+          ctx.type = 'html';
+          const name = (client as { clientName?: string }).clientName ?? client.clientId;
+          ctx.body = devicePage(
+            '기기 승인',
+            `<p><strong>${escapeHtml(name)}</strong> 기기의 로그인을 승인할까요?</p>
+             <p class="code">${escapeHtml(userCode)}</p>${form}
+             <p class="muted">본인이 시작한 로그인이 아니라면 이 창을 닫으세요.</p>`,
+          );
+        },
+        successSource: async (ctx) => {
+          ctx.type = 'html';
+          ctx.body = devicePage('완료', '<p>기기 로그인이 승인되었습니다. 이 창을 닫고 기기로 돌아가세요.</p>');
+        },
+      },
     },
     interactions: {
       // Handled by gatehouse itself outside the /oidc mount; the existing
@@ -85,4 +111,29 @@ export async function initOidc(): Promise<Provider> {
   // TLS terminates at nginx; trust X-Forwarded-Proto.
   oidc.proxy = true;
   return oidc;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+function devicePage(title: string, body: string): string {
+  return `<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gatehouse — ${escapeHtml(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif; background: #f6f7f9;
+         display: grid; place-items: center; min-height: 90vh; margin: 0; color: #1a1d21; }
+  .card { background: #fff; border: 1px solid #e4e6ea; border-radius: 12px; padding: 32px 40px;
+          max-width: 400px; text-align: center; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .code { font-size: 24px; letter-spacing: 3px; font-weight: 700; background: #f4f5f7;
+          border-radius: 8px; padding: 10px; }
+  .muted { color: #888; font-size: 13px; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: 10px; font-size: 18px; text-align: center;
+          letter-spacing: 2px; border: 1px solid #d5d8dc; border-radius: 8px; margin: 12px 0; }
+  button, input[type=submit] { padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none;
+          background: #1a1d21; color: #fff; cursor: pointer; }
+</style>
+<body><div class="card"><h1>${escapeHtml(title)}</h1>${body}</div></body>`;
 }

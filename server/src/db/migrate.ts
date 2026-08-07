@@ -65,6 +65,14 @@ const migrations: { name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    name: '004_client_grants',
+    sql: `
+      ALTER TABLE oidc_clients
+        ADD COLUMN grant_types TEXT[] NOT NULL DEFAULT ARRAY['authorization_code'],
+        ADD COLUMN token_endpoint_auth_method TEXT NOT NULL DEFAULT 'client_secret_post';
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {
