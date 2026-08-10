@@ -56,10 +56,16 @@ export async function initOidc(): Promise<Provider> {
         userCodeConfirmSource: async (ctx, form, client, _deviceInfo, userCode) => {
           ctx.type = 'html';
           const name = (client as { clientName?: string }).clientName ?? client.clientId;
+          // Fallback form if oidc-provider doesn't supply one
+          const submitForm = form || `
+            <form method="post" style="margin-top:16px;">
+              <button type="submit" name="confirm" value="true">승인</button>
+              <button type="submit" name="confirm" value="false" style="background:#888;margin-left:8px;">거절</button>
+            </form>`;
           ctx.body = devicePage(
             '기기 승인',
             `<p><strong>${escapeHtml(name)}</strong> 기기의 로그인을 승인할까요?</p>
-             <p class="code">${escapeHtml(userCode)}</p>${form}
+             <p class="code">${escapeHtml(userCode)}</p>${submitForm}
              <p class="muted">본인이 시작한 로그인이 아니라면 이 창을 닫으세요.</p>`,
           );
         },
