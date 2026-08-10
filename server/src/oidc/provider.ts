@@ -58,12 +58,14 @@ export async function initOidc(): Promise<Provider> {
           const name = (client as { clientName?: string }).clientName ?? client.clientId;
           // Always add submit buttons to the form (oidc-provider's form lacks them)
           const formWithButtons = form
-            ? form.replace('</form>', `<button type="submit" name="confirm" value="yes" style="margin-top:12px;">승인</button>
-<button type="submit" name="confirm" value="no" style="background:#888;margin-left:8px;">거절</button>
+            ? form.replace('</form>', `<input type="submit" value="승인" style="margin-top:12px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; background: #1a1d21; color: #fff; cursor: pointer;">
+<input type="submit" name="deny" value="거절" style="background:#888;margin-left:8px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; color: #fff; cursor: pointer;">
 </form>`)
             : `<form method="post" style="margin-top:16px;">
-<button type="submit" name="confirm" value="yes">승인</button>
-<button type="submit" name="confirm" value="no" style="background:#888;margin-left:8px;">거절</button>
+<input type="hidden" name="user_code" value="${escapeHtml(userCode)}">
+<input type="hidden" name="confirm" value="yes">
+<input type="submit" value="승인" style="padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; background: #1a1d21; color: #fff; cursor: pointer;">
+<input type="submit" name="deny" value="거절" style="background:#888;margin-left:8px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; color: #fff; cursor: pointer;">
 </form>`;
           ctx.body = devicePage(
             '기기 승인',
