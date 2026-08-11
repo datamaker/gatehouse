@@ -83,9 +83,9 @@ export function ClientsPage() {
         <tbody>
           {clients.map((c) => (
             <tr key={c.id}>
-              <td>{c.name}</td>
-              <td><code>{c.client_id}</code></td>
-              <td className="small muted">{c.redirect_uris.join(', ')}</td>
+              <td className="cell-primary cell-title">{c.name}</td>
+              <td data-label="client_id"><code>{c.client_id}</code></td>
+              <td className="small muted uris" data-label="redirect URIs">{c.redirect_uris.join(', ')}</td>
               <td>
                 <button className="ghost small" onClick={() => remove(c)}>삭제</button>
               </td>

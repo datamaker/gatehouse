@@ -48,24 +48,29 @@ export async function initOidc(): Promise<Provider> {
         enabled: true,
         userCodeInputSource: async (ctx, form) => {
           ctx.type = 'html';
+          // oidc-provider's form carries no submit button; without one there is
+          // no visible way to continue on a phone.
           ctx.body = devicePage(
             '기기 로그인',
-            `<p>기기에 표시된 코드를 입력하세요.</p>${form}`,
+            `<p>기기에 표시된 코드를 입력하세요.</p>${form}
+             <div class="actions"><button type="submit" form="op.deviceInputForm">계속</button></div>`,
           );
         },
         userCodeConfirmSource: async (ctx, form, client, _deviceInfo, userCode) => {
           ctx.type = 'html';
           const name = (client as { clientName?: string }).clientName ?? client.clientId;
-          // Always add submit buttons to the form (oidc-provider's form lacks them)
+          // Always add submit buttons to the form (oidc-provider's form lacks them).
+          // Styling lives in devicePage()'s stylesheet so the buttons stack on phones.
+          const buttons = `<div class="actions">
+<input type="submit" value="승인">
+<input type="submit" name="deny" class="deny" value="거절">
+</div>`;
           const formWithButtons = form
-            ? form.replace('</form>', `<input type="submit" value="승인" style="margin-top:12px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; background: #1a1d21; color: #fff; cursor: pointer;">
-<input type="submit" name="deny" value="거절" style="background:#888;margin-left:8px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; color: #fff; cursor: pointer;">
-</form>`)
-            : `<form method="post" style="margin-top:16px;">
+            ? form.replace('</form>', `${buttons}</form>`)
+            : `<form method="post">
 <input type="hidden" name="user_code" value="${escapeHtml(userCode)}">
 <input type="hidden" name="confirm" value="yes">
-<input type="submit" value="승인" style="padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; background: #1a1d21; color: #fff; cursor: pointer;">
-<input type="submit" name="deny" value="거절" style="background:#888;margin-left:8px; padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none; color: #fff; cursor: pointer;">
+${buttons}
 </form>`;
           ctx.body = devicePage(
             '기기 승인',
@@ -133,18 +138,33 @@ function devicePage(title: string, body: string): string {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>gatehouse — ${escapeHtml(title)}</title>
 <style>
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body { font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif; background: #f6f7f9;
-         display: grid; place-items: center; min-height: 90vh; margin: 0; color: #1a1d21; }
+         display: grid; place-items: center; min-height: 100vh; margin: 0; color: #1a1d21;
+         padding: 24px max(16px, env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))
+                  max(16px, env(safe-area-inset-right)); }
   .card { background: #fff; border: 1px solid #e4e6ea; border-radius: 12px; padding: 32px 40px;
-          max-width: 400px; text-align: center; }
+          width: 100%; max-width: 400px; text-align: center; }
   h1 { font-size: 18px; margin: 0 0 12px; }
+  p { overflow-wrap: anywhere; }
   .code { font-size: 24px; letter-spacing: 3px; font-weight: 700; background: #f4f5f7;
           border-radius: 8px; padding: 10px; }
   .muted { color: #888; font-size: 13px; }
-  input[type=text] { width: 100%; box-sizing: border-box; padding: 10px; font-size: 18px; text-align: center;
-          letter-spacing: 2px; border: 1px solid #d5d8dc; border-radius: 8px; margin: 12px 0; }
-  button, input[type=submit] { padding: 10px 24px; font-size: 15px; border-radius: 8px; border: none;
-          background: #1a1d21; color: #fff; cursor: pointer; }
+  /* 16px+ keeps iOS Safari from zooming the page when the field takes focus. */
+  input[type=text] { width: 100%; padding: 12px; font-size: 18px; text-align: center;
+          letter-spacing: 2px; border: 1px solid #d5d8dc; border-radius: 8px; margin: 12px 0;
+          min-height: 48px; }
+  button, input[type=submit] { padding: 12px 24px; font-size: 15px; border-radius: 8px; border: none;
+          background: #1a1d21; color: #fff; cursor: pointer; min-height: 44px; font-family: inherit; }
+  input[type=submit].deny { background: #888; }
+  .actions { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
+  .actions > * { flex: 1 1 0; }
+  @media (max-width: 480px) {
+    .card { padding: 24px 20px; }
+    /* Stack the approve/deny pair so neither is a cramped, mis-tappable target. */
+    .actions { flex-direction: column; }
+  }
 </style>
 <body><div class="card"><h1>${escapeHtml(title)}</h1>${body}</div></body>`;
 }

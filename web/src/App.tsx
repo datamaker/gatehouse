@@ -24,7 +24,7 @@ export function App() {
         </div>
         <div className="who">
           {me.picture && <img src={me.picture} alt="" referrerPolicy="no-referrer" />}
-          <span>{me.name || me.email}</span>
+          <span className="who-name">{me.name || me.email}</span>
           <form method="post" action="/logout">
             <button className="ghost">로그아웃</button>
           </form>
