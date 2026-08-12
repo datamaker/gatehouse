@@ -43,7 +43,7 @@ export function UsersPage({ me }: { me: Me }) {
         <tbody>
           {users.map((u) => (
             <tr key={u.id} className={u.is_active ? '' : 'inactive'}>
-              <td>
+              <td className="cell-primary">
                 <div className="user-cell">
                   {u.picture && <img src={u.picture} alt="" referrerPolicy="no-referrer" />}
                   <div>
@@ -52,10 +52,10 @@ export function UsersPage({ me }: { me: Me }) {
                   </div>
                 </div>
               </td>
-              <td>{u.hd}</td>
-              <td>{fmt(u.last_login_at)}</td>
-              <td>{u.active_sessions}</td>
-              <td>
+              <td data-label="도메인">{u.hd}</td>
+              <td data-label="마지막 로그인">{fmt(u.last_login_at)}</td>
+              <td data-label="세션">{u.active_sessions}</td>
+              <td data-label="상태">
                 <button
                   className={u.is_active ? 'pill on' : 'pill off'}
                   disabled={u.id === me.id}
@@ -65,7 +65,7 @@ export function UsersPage({ me }: { me: Me }) {
                   {u.is_active ? '활성' : '비활성'}
                 </button>
               </td>
-              <td>
+              <td data-label="권한">
                 <button
                   className={u.is_admin ? 'pill on' : 'pill'}
                   disabled={u.id === me.id}

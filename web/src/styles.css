@@ -2,30 +2,40 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Don't let iOS Safari inflate text when the phone is rotated to landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
   font-size: 14px;
   color: #1a1d21;
   background: #f6f7f9;
+  -webkit-tap-highlight-color: rgba(26, 29, 33, 0.08);
 }
 
 .shell {
   max-width: 960px;
   margin: 0 auto;
-  padding: 0 20px 60px;
+  /* Keep content clear of the notch / rounded corners in landscape. */
+  padding: 0 max(20px, env(safe-area-inset-left)) calc(60px + env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-right));
 }
 
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 18px 0;
 }
 
 .brand {
   font-weight: 700;
   font-size: 17px;
+  white-space: nowrap;
 }
 
 .brand-mark {
@@ -37,6 +47,17 @@ header {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.who-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.who .ghost {
+  white-space: nowrap;
 }
 
 .who img,
@@ -44,6 +65,7 @@ header {
   width: 28px;
   height: 28px;
   border-radius: 50%;
+  flex: none;
 }
 
 nav {
@@ -101,6 +123,11 @@ tr.inactive td {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.user-cell .muted {
+  overflow-wrap: anywhere;
 }
 
 button {
@@ -169,6 +196,7 @@ button {
 
 .filter {
   width: 260px;
+  max-width: 100%;
   margin: 12px 0 4px;
   padding: 8px 12px;
   border: 1px solid #d5d8dc;
@@ -188,6 +216,8 @@ button {
   border-radius: 12px;
   padding: 32px 48px;
   text-align: center;
+  width: 100%;
+  max-width: 420px;
 }
 
 .card.profile img {
@@ -198,6 +228,10 @@ button {
 
 .card.profile h2 {
   margin: 12px 0 0;
+}
+
+.card.profile p {
+  overflow-wrap: anywhere;
 }
 
 .muted {
@@ -218,6 +252,7 @@ button {
   border-radius: 8px;
   padding: 10px 14px;
   margin: 12px 0;
+  overflow-wrap: anywhere;
 }
 
 .secret-box {
@@ -238,12 +273,15 @@ button {
   border-radius: 6px;
   padding: 3px 8px;
   user-select: all;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .client-form {
   display: flex;
   gap: 8px;
   margin: 14px 0 6px;
+  flex-wrap: wrap;
 }
 
 .client-form input {
@@ -251,6 +289,7 @@ button {
   border: 1px solid #d5d8dc;
   border-radius: 8px;
   font-size: 13px;
+  min-width: 0;
 }
 
 .client-form input:nth-child(3) {
@@ -262,4 +301,199 @@ td code {
   background: #f4f5f7;
   border-radius: 4px;
   padding: 2px 6px;
+  overflow-wrap: anywhere;
+}
+
+.uris {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- mobile */
+
+@media (max-width: 720px) {
+  .shell {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  }
+
+  header {
+    padding: 14px 0 12px;
+  }
+
+  .brand {
+    font-size: 16px;
+  }
+
+  .who {
+    gap: 8px;
+  }
+
+  /* The signed-in name is the first thing to give up room to the logout button. */
+  .who-name {
+    max-width: 34vw;
+    font-size: 13px;
+  }
+
+  /* Three tabs, equal columns — no horizontal scrolling for navigation. */
+  nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  nav button {
+    padding: 10px 4px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  main {
+    padding: 4px 12px 12px;
+    border-radius: 10px;
+  }
+
+  /* Tables reflow into one card per row; headers move into ::before labels. */
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+  }
+
+  thead {
+    /* Visually hidden, still read by screen readers. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  tr {
+    border: 1px solid #e4e6ea;
+    border-radius: 10px;
+    padding: 4px 12px;
+    margin: 12px 0;
+  }
+
+  td {
+    border-bottom: 1px solid #f4f5f7;
+    padding: 9px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  tr td:last-child {
+    border-bottom: none;
+  }
+
+  td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    color: #888;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  /* Unlabelled action cells (delete, revoke) keep their control on the right. */
+  td:not([data-label]) {
+    justify-content: flex-end;
+  }
+
+  /* A label with nothing after it is just noise on a narrow card. */
+  td[data-label]:empty {
+    display: none;
+  }
+
+  /* The identity cell reads as the card's title, so it keeps the full width. */
+  td.cell-primary {
+    display: block;
+    text-align: left;
+    padding-top: 12px;
+  }
+
+  td.cell-title {
+    font-weight: 600;
+  }
+
+  /* Long values (redirect URIs) get the full card width under their label
+     instead of being squeezed into the right-hand column. */
+  td.uris {
+    display: block;
+    text-align: left;
+  }
+
+  td.uris::before {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .user-cell img {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Comfortable tap targets (>=40px) for every control in a row. */
+  .pill,
+  .ghost {
+    min-height: 40px;
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  .badge {
+    padding: 5px 10px;
+  }
+
+  .filter {
+    width: 100%;
+    /* 16px keeps iOS Safari from zooming in when the field takes focus. */
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 42px;
+  }
+
+  /* Stacked form: full-width fields, full-width submit. */
+  .client-form {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .client-form input {
+    width: 100%;
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 42px;
+  }
+
+  .client-form .ghost {
+    width: 100%;
+  }
+
+  .secret-box {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .secret-box .ghost {
+    align-self: stretch;
+  }
+
+  .card.profile {
+    padding: 28px 20px;
+  }
+
+  .center {
+    min-height: 40vh;
+  }
 }

@@ -44,18 +44,18 @@ export function AuditPage() {
         <tbody>
           {events.map((e) => (
             <tr key={e.id}>
-              <td className="nowrap">
+              <td className="nowrap" data-label="시각">
                 {new Date(e.created_at).toLocaleString('ko-KR', {
                   dateStyle: 'short',
                   timeStyle: 'medium',
                 })}
               </td>
-              <td>
+              <td data-label="이벤트">
                 <span className={`badge ${e.event}`}>{LABEL[e.event]}</span>
               </td>
-              <td>{e.email || '—'}</td>
-              <td className="muted small">{e.detail ?? ''}</td>
-              <td className="muted small">{e.ip ?? ''}</td>
+              <td data-label="이메일">{e.email || '—'}</td>
+              <td className="muted small" data-label="상세">{e.detail ?? ''}</td>
+              <td className="muted small" data-label="IP">{e.ip ?? ''}</td>
             </tr>
           ))}
         </tbody>
