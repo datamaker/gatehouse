@@ -81,9 +81,11 @@ ${buttons}
         },
         successSource: async (ctx) => {
           ctx.type = 'html';
-          // Count down and try to close the tab. Browsers only let a page close
-          // a window that a script opened, so a hand-opened tab won't close —
-          // swap in a "you can close this" line when window.close() is a no-op.
+          // Count down, then try hard to close the tab. Browsers only close a
+          // window a script can claim: a tab opened via `open <url>` has a
+          // single-entry history and often closes, but a hand-opened tab or one
+          // with back-history won't. Try window.close(), then the
+          // open-self-then-close trick, and finally fall back to an instruction.
           ctx.body = devicePage(
             '완료',
             `<p>기기 로그인이 승인되었습니다.</p>
@@ -97,11 +99,14 @@ ${buttons}
                    n -= 1;
                    if (n > 0) { el.textContent = n; return; }
                    clearInterval(t);
-                   window.close();
-                   // Still here a moment later means the browser blocked the close.
+                   try { window.close(); } catch (e) {}
+                   // Re-claim this window as script-opened, then close — lets some
+                   // browsers close a tab the plain window.close() wouldn't.
+                   try { window.open('', '_self'); window.close(); } catch (e) {}
+                   // Still here a moment later means the browser blocked it.
                    setTimeout(function () {
                      msg.textContent = '이제 이 창을 닫고 기기로 돌아가세요.';
-                   }, 300);
+                   }, 400);
                  }, 1000);
                })();
              </script>`,
