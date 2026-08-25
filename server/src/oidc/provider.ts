@@ -81,7 +81,31 @@ ${buttons}
         },
         successSource: async (ctx) => {
           ctx.type = 'html';
-          ctx.body = devicePage('완료', '<p>기기 로그인이 승인되었습니다. 이 창을 닫고 기기로 돌아가세요.</p>');
+          // Count down and try to close the tab. Browsers only let a page close
+          // a window that a script opened, so a hand-opened tab won't close —
+          // swap in a "you can close this" line when window.close() is a no-op.
+          ctx.body = devicePage(
+            '완료',
+            `<p>기기 로그인이 승인되었습니다.</p>
+             <p class="muted" id="closeMsg">이 창은 <span id="count">3</span>초 후 자동으로 닫힙니다.</p>
+             <script>
+               (function () {
+                 var n = 3;
+                 var el = document.getElementById('count');
+                 var msg = document.getElementById('closeMsg');
+                 var t = setInterval(function () {
+                   n -= 1;
+                   if (n > 0) { el.textContent = n; return; }
+                   clearInterval(t);
+                   window.close();
+                   // Still here a moment later means the browser blocked the close.
+                   setTimeout(function () {
+                     msg.textContent = '이제 이 창을 닫고 기기로 돌아가세요.';
+                   }, 300);
+                 }, 1000);
+               })();
+             </script>`,
+          );
         },
       },
     },
