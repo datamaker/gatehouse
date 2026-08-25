@@ -5,7 +5,14 @@ export function ClientsPage() {
   const [clients, setClients] = useState<OidcClient[]>([]);
   const [error, setError] = useState('');
   const [created, setCreated] = useState<OidcClient | null>(null);
-  const [form, setForm] = useState({ client_id: '', name: '', redirect_uris: '' });
+  const [form, setForm] = useState({
+    client_id: '',
+    name: '',
+    redirect_uris: '',
+    authCode: true,
+    deviceFlow: false,
+    publicClient: false,
+  });
 
   const reload = () => api.clients().then(setClients).catch((e) => setError(e.message));
   useEffect(() => {
@@ -15,13 +22,26 @@ export function ClientsPage() {
   const create = async () => {
     setError('');
     try {
+      const grant_types = [
+        ...(form.authCode ? ['authorization_code'] : []),
+        ...(form.deviceFlow ? ['urn:ietf:params:oauth:grant-type:device_code'] : []),
+      ];
       const c = await api.createClient({
         client_id: form.client_id.trim(),
         name: form.name.trim(),
         redirect_uris: form.redirect_uris.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
+        grant_types,
+        token_endpoint_auth_method: form.publicClient ? 'none' : 'client_secret_post',
       });
       setCreated(c);
-      setForm({ client_id: '', name: '', redirect_uris: '' });
+      setForm({
+        client_id: '',
+        name: '',
+        redirect_uris: '',
+        authCode: true,
+        deviceFlow: false,
+        publicClient: false,
+      });
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -44,8 +64,16 @@ export function ClientsPage() {
       {error && <div className="error">{error}</div>}
       {created && (
         <div className="secret-box">
-          <strong>{created.name}</strong> 클라이언트가 생성됐습니다. secret은 지금만 표시됩니다:
-          <code>{created.client_secret}</code>
+          {created.client_secret ? (
+            <>
+              <strong>{created.name}</strong> 클라이언트가 생성됐습니다. secret은 지금만 표시됩니다:
+              <code>{created.client_secret}</code>
+            </>
+          ) : (
+            <>
+              <strong>{created.name}</strong> 클라이언트가 생성됐습니다 (public — secret 없음).
+            </>
+          )}
           <button className="ghost small" onClick={() => setCreated(null)}>닫기</button>
         </div>
       )}
@@ -62,11 +90,44 @@ export function ClientsPage() {
           onChange={(e) => setForm({ ...form, name: e.target.value })}
         />
         <input
-          placeholder="redirect URI (comma로 여러 개)"
+          placeholder={form.authCode ? 'redirect URI (comma로 여러 개)' : 'redirect URI (device flow만이면 비워도 됨)'}
           value={form.redirect_uris}
           onChange={(e) => setForm({ ...form, redirect_uris: e.target.value })}
         />
-        <button className="ghost" disabled={!form.client_id || !form.name || !form.redirect_uris} onClick={create}>
+        <label className="small">
+          <input
+            type="checkbox"
+            checked={form.authCode}
+            onChange={(e) => setForm({ ...form, authCode: e.target.checked })}
+          />{' '}
+          Authorization Code
+        </label>
+        <label className="small">
+          <input
+            type="checkbox"
+            checked={form.deviceFlow}
+            onChange={(e) => setForm({ ...form, deviceFlow: e.target.checked })}
+          />{' '}
+          Device Flow
+        </label>
+        <label className="small">
+          <input
+            type="checkbox"
+            checked={form.publicClient}
+            onChange={(e) => setForm({ ...form, publicClient: e.target.checked })}
+          />{' '}
+          Public client (시크릿 없음)
+        </label>
+        <button
+          className="ghost"
+          disabled={
+            !form.client_id ||
+            !form.name ||
+            (!form.authCode && !form.deviceFlow) ||
+            (form.authCode && !form.redirect_uris)
+          }
+          onClick={create}
+        >
           추가
         </button>
       </div>
@@ -76,6 +137,7 @@ export function ClientsPage() {
           <tr>
             <th>이름</th>
             <th>client_id</th>
+            <th>grants</th>
             <th>redirect URIs</th>
             <th></th>
           </tr>
@@ -85,6 +147,12 @@ export function ClientsPage() {
             <tr key={c.id}>
               <td className="cell-primary cell-title">{c.name}</td>
               <td data-label="client_id"><code>{c.client_id}</code></td>
+              <td className="small muted" data-label="grants">
+                {(c.grant_types ?? ['authorization_code'])
+                  .map((g) => (g === 'authorization_code' ? 'code' : g.endsWith('device_code') ? 'device' : g))
+                  .join(', ')}
+                {c.token_endpoint_auth_method === 'none' ? ' · public' : ''}
+              </td>
               <td className="small muted uris" data-label="redirect URIs">{c.redirect_uris.join(', ')}</td>
               <td>
                 <button className="ghost small" onClick={() => remove(c)}>삭제</button>

@@ -52,6 +52,8 @@ export interface OidcClient {
   client_id: string;
   name: string;
   redirect_uris: string[];
+  grant_types: string[];
+  token_endpoint_auth_method: string;
   created_at: string;
   client_secret?: string;
 }
@@ -59,7 +61,13 @@ export interface OidcClient {
 export const api = {
   me: () => request<Me>('/api/me'),
   clients: () => request<OidcClient[]>('/api/admin/clients'),
-  createClient: (body: { client_id: string; name: string; redirect_uris: string[] }) =>
+  createClient: (body: {
+    client_id: string;
+    name: string;
+    redirect_uris: string[];
+    grant_types?: string[];
+    token_endpoint_auth_method?: string;
+  }) =>
     request<OidcClient>('/api/admin/clients', { method: 'POST', body: JSON.stringify(body) }),
   deleteClient: (id: number) =>
     request<{ deleted: boolean }>(`/api/admin/clients/${id}`, { method: 'DELETE' }),
