@@ -20,6 +20,7 @@ services:
       - pgsearch
       - vault
       - lookout
+      - mailroom
     restart: unless-stopped
 
 networks:
@@ -36,3 +37,6 @@ networks:
   lookout:
     external: true
     name: lookout_default
+  mailroom:
+    external: true
+    name: mailroom_default
