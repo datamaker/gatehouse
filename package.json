@@ -1,6 +1,6 @@
 {
   "name": "gatehouse",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Self-hosted login gateway. Google Workspace sign-in only, domain-restricted, with forward-auth for protecting internal apps.",
   "workspaces": [
