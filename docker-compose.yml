@@ -12,6 +12,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    # DB 가 죽으면 앱도 같이 멈춘다 — 재시작 정책을 반드시 건다.
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: '20m', max-file: '5' }
 
   gatehouse:
     build: .
@@ -31,6 +36,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: '20m', max-file: '5' }
 
 volumes:
   gatehouse-pgdata:
