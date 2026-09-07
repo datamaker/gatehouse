@@ -1,0 +1,21 @@
+name: CI
+
+# main 에 들어가는 것과 PR 은 빌드가 되는지 먼저 본다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p server/tsconfig.json
+      - run: npm run build
