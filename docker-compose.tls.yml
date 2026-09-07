@@ -33,10 +33,11 @@ networks:
     name: pgsearch_default
   vault:
     external: true
-    name: secret-vault_vault-network
+    name: vault_vault-network
   lookout:
     external: true
     name: lookout_default
   mailroom:
     external: true
     name: mailroom_default
+
