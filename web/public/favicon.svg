@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="gatehouse">
+  <rect width="64" height="64" rx="14" fill="#333b47"/>
+  <path d="M32 11 51 17.5V33c0 10.5-8.5 17.5-19 20.5C21.5 50.5 13 43.5 13 33V17.5Z" fill="#ffffff"/>
+  <circle cx="32" cy="28.5" r="4.6" fill="#333b47"/>
+  <path d="M29.6 32h4.8l1.3 8.2h-7.4Z" fill="#333b47"/>
+</svg>
