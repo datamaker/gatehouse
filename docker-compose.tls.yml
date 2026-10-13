@@ -21,6 +21,8 @@ services:
       - vault
       - lookout
       - mailroom
+      - lobby
+      - notebook
     restart: unless-stopped
 
 networks:
@@ -40,4 +42,10 @@ networks:
   mailroom:
     external: true
     name: mailroom_default
+  lobby:
+    external: true
+    name: lobby_default
+  notebook:
+    external: true
+    name: notebook_default
 
