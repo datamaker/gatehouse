@@ -20,7 +20,7 @@
     "pg": "^8.12.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.12",
+    "@types/node": "^24.19.2",
     "@types/oidc-provider": "^9.11.0",
     "@types/pg": "^8.11.6",
     "tsx": "^4.16.2",
