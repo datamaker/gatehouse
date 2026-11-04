@@ -122,6 +122,20 @@ describe('ZeroTrust.check', () => {
     assert.equal(calls - before, 2);
   });
 
+  test('캐시: 다른 앱(host)은 ward 를 다시 안 부르지만 기록은 앱마다 1건', async () => {
+    const recorded: ZtCheckInput[] = [];
+    const zt = new ZeroTrust(opts(), (i) => { recorded.push(i); });
+    const before = calls;
+    await zt.check(input('good@datasee.co.kr', 'note.datasee.co.kr'));
+    const vault = await zt.check(input('good@datasee.co.kr', 'vault.datasee.co.kr'));
+    await zt.check(input('good@datasee.co.kr', 'VAULT.datasee.co.kr')); // 대소문자만 다르면 같은 앱
+    await zt.check(input('good@datasee.co.kr', 'note.datasee.co.kr'));
+    assert.equal(calls - before, 1, 'ward 조회는 사용자+IP 로 한 번');
+    assert.equal(vault.cached, true);
+    assert.equal(vault.verdict, 'compliant');
+    assert.deepEqual(recorded.map((r) => r.host), ['note.datasee.co.kr', 'vault.datasee.co.kr']);
+  });
+
   test('ward 장애: fail-open 통과 / fail-closed 차단, 오류는 짧게만 캐시', async () => {
     failWith = 500;
     const open = await new ZeroTrust(opts({ failOpen: true })).check(input('good@datasee.co.kr'));

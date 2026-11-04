@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { query } from '../db/pool.js';
 import { ZeroTrust, type ZtCheckInput, type ZtResult } from './zt.js';
 
-/** 판정 기록. monitor/enforce 모두 fresh 판정마다 1건(캐시 TTL 안에서는 쌓이지 않는다). */
+/** 판정 기록. monitor/enforce 모두 사용자+IP+앱(host) 마다 캐시 TTL 에 1건. */
 async function recordCheck(input: ZtCheckInput, r: ZtResult): Promise<void> {
   await query(
     `INSERT INTO zt_checks (email, host, ip, verdict, device_id, device_hostname, mode, allowed, error)

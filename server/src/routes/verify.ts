@@ -34,7 +34,7 @@ function protectedHost(req: FastifyRequest): string {
 
 /**
  * 제로트러스트 판정. 세션이 확인된 뒤에 부른다. off 면 null.
- * 요청마다 불리지만 ZeroTrust 가 email+ip 로 60초 캐시하므로 ward 는 분당 1회만 맞는다.
+ * 요청마다 불리지만 ZeroTrust 가 email+ip 로 60초 캐시하므로 ward 는 분당 1회만 맞는다(기록은 앱마다 분당 1건).
  */
 async function ztCheck(req: FastifyRequest, user: SessionUser): Promise<ZtResult | null> {
   if (zeroTrust.mode === 'off') return null;

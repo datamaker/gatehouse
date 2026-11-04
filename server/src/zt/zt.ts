@@ -48,7 +48,7 @@ export interface ZtResult {
   /** 통과 여부. monitor 는 항상 true. */
   allowed: boolean;
   device: ZtDevice | null;
-  /** 캐시에서 꺼낸 결과인지. 기록은 fresh 일 때만 남긴다(요청마다 쌓이지 않게). */
+  /** ward 조회 캐시에서 꺼낸 결과인지. 기록은 fresh 거나 그 앱(host)의 첫 접속일 때 남는다(요청마다 쌓이지 않게). */
   cached: boolean;
   error?: string;
 }
@@ -114,10 +114,12 @@ function matchHost(host: string, pattern: string): boolean {
 
 export class ZeroTrust {
   private cache = new Map<string, { at: number; result: ZtResult }>();
+  /** email|ip|host → 마지막 기록 시각. */
+  private recorded = new Map<string, number>();
 
   constructor(
     private opts: ZtOptions,
-    /** fresh 판정마다 호출된다(기록용). 실패해도 판정에는 영향이 없어야 한다. */
+    /** fresh 판정마다, 그리고 캐시를 탔어도 그 앱(host)의 TTL 안 첫 접속이면 호출된다(기록용). 실패해도 판정에는 영향이 없어야 한다. */
     private record: (input: ZtCheckInput, result: ZtResult) => Promise<void> | void = () => {},
   ) {}
 
@@ -139,42 +141,54 @@ export class ZeroTrust {
       return { mode, verdict: 'exempt', allowed: true, device: null, cached: false };
     }
 
-    const key = `${input.email.toLowerCase()}|${input.ip}`;
+    const email = input.email.toLowerCase();
+    const key = `${email}|${input.ip}`;
     const now = Date.now();
     const hit = this.cache.get(key);
+    let result: ZtResult;
+    let fresh = false;
     if (hit && now - hit.at < this.opts.cacheSec * 1000) {
-      return { ...hit.result, cached: true };
+      result = { ...hit.result, cached: true };
+    } else {
+      fresh = true;
+      const fetched = await fetchPosture(this.opts, input.email, input.ip);
+      if (fetched.ok) {
+        const verdict = fetched.posture.verdict;
+        result = {
+          mode,
+          verdict,
+          allowed: decide(mode, verdict, this.opts.failOpen),
+          device: pickDevice(fetched.posture.devices),
+          cached: false,
+        };
+      } else {
+        result = {
+          mode,
+          verdict: 'error',
+          allowed: decide(mode, 'error', this.opts.failOpen),
+          device: null,
+          cached: false,
+          error: fetched.error,
+        };
+      }
+      // 오류는 짧게만 캐시한다(ward 가 돌아오면 바로 반영되게).
+      this.cache.set(key, { at: fetched.ok ? now : now - this.opts.cacheSec * 1000 + 5000, result });
+      if (this.cache.size > 5000) this.cache.clear();
     }
 
-    const fetched = await fetchPosture(this.opts, input.email, input.ip);
-    let result: ZtResult;
-    if (fetched.ok) {
-      const verdict = fetched.posture.verdict;
-      result = {
-        mode,
-        verdict,
-        allowed: decide(mode, verdict, this.opts.failOpen),
-        device: pickDevice(fetched.posture.devices),
-        cached: false,
-      };
-    } else {
-      result = {
-        mode,
-        verdict: 'error',
-        allowed: decide(mode, 'error', this.opts.failOpen),
-        device: null,
-        cached: false,
-        error: fetched.error,
-      };
-    }
-    // 오류는 짧게만 캐시한다(ward 가 돌아오면 바로 반영되게).
-    this.cache.set(key, { at: fetched.ok ? now : now - this.opts.cacheSec * 1000 + 5000, result });
-    if (this.cache.size > 5000) this.cache.clear();
-    try {
-      await this.record(input, result);
-    } catch (err) {
-      // 기록 실패는 판정에 영향 없지만, 조용히 삼키면 운영에서 "기록이 안 쌓인다"를 못 잡는다(2026-11-04 실제로 겪음).
-      console.error('zt_checks 기록 실패', (err as Error).message);
+    // 기록은 앱(host)마다 TTL 에 한 번. ward 조회 캐시는 사용자+IP 로 묶지만, 기록까지 그 키로 묶으면 60초 안에
+    // 들어간 다른 앱이 목록에 아예 안 보인다(2026-11-04 운영에서 확인: vault·redash 접속이 note 뒤에 숨었다).
+    const rkey = `${key}|${input.host.toLowerCase()}`;
+    const last = this.recorded.get(rkey);
+    if (fresh || last === undefined || now - last >= this.opts.cacheSec * 1000) {
+      this.recorded.set(rkey, now);
+      if (this.recorded.size > 20000) this.recorded.clear();
+      try {
+        await this.record(input, result);
+      } catch (err) {
+        // 기록 실패는 판정에 영향 없지만, 조용히 삼키면 운영에서 "기록이 안 쌓인다"를 못 잡는다(2026-11-04 실제로 겪음).
+        console.error('zt_checks 기록 실패', (err as Error).message);
+      }
     }
     return result;
   }
@@ -182,6 +196,7 @@ export class ZeroTrust {
   /** 테스트·관리용. */
   clearCache(): void {
     this.cache.clear();
+    this.recorded.clear();
   }
 }
 
