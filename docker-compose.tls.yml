@@ -24,6 +24,7 @@ services:
       - lobby
       - notebook
       - ward
+      - forager
     restart: unless-stopped
 
   # 제로트러스트: gatehouse 가 ward 컨테이너(/api/zt/posture)를 직접 부른다(nginx 를 거치면 SSO 벽에 걸린다).
@@ -58,4 +59,8 @@ networks:
   ward:
     external: true
     name: ward_default
+  # search.datasee.co.kr (deploy/forager-public.conf) 가 forager:9300 을 proxy_pass 한다.
+  forager:
+    external: true
+    name: forager_default
 
