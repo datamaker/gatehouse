@@ -23,7 +23,14 @@ services:
       - mailroom
       - lobby
       - notebook
+      - ward
     restart: unless-stopped
+
+  # 제로트러스트: gatehouse 가 ward 컨테이너(/api/zt/posture)를 직접 부른다(nginx 를 거치면 SSO 벽에 걸린다).
+  gatehouse:
+    networks:
+      - default
+      - ward
 
 networks:
   # Join each app's compose network so their ports never need host exposure.
@@ -48,4 +55,7 @@ networks:
   notebook:
     external: true
     name: notebook_default
+  ward:
+    external: true
+    name: ward_default
 
