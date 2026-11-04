@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
-    trustProxy: true,
+    trustProxy: 1, // nginx 한 홉만 믿는다. true 면 클라이언트가 보낸 X-Forwarded-For 첫 항목이 req.ip 가 돼 제로트러스트 기기 IP 를 사칭할 수 있다
   });
 
   await app.register(cookie, { secret: config.cookieSecret });

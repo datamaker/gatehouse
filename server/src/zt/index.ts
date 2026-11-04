@@ -35,9 +35,8 @@ export const zeroTrust = new ZeroTrust(
   recordCheck,
 );
 
-/** 요청의 클라이언트 IP: X-Forwarded-For 첫 항목(trustProxy 가 이미 req.ip 에 반영), 없으면 소켓. */
-export function clientIp(req: { ip: string; headers: Record<string, string | string[] | undefined> }): string {
-  const xff = req.headers['x-forwarded-for'];
-  const first = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim();
-  return first || req.ip;
+/** 요청의 클라이언트 IP. fastify trustProxy=1 이 nginx 한 홉만 믿고 X-Forwarded-For 의 마지막 항목(nginx 가 $remote_addr 로 쓴 값)을 req.ip 로 준다.
+ *  헤더를 직접 읽지 않는다 — 첫 항목을 읽으면 브라우저가 붙인 값으로 남의 기기 IP 를 사칭할 수 있다(2026-11-04 운영에서 확인). */
+export function clientIp(req: { ip: string }): string {
+  return req.ip;
 }
