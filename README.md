@@ -81,7 +81,7 @@ forward-auth 판정에 "사람"뿐 아니라 "기기 상태"를 넣는다. ward(
 - forward-auth 는 요청마다 불리지만 사용자+IP 로 60초 캐시하므로 ward 는 분당 1회만 맞고, 기록도 그때 1건만 남는다.
 - 앱에는 `X-Auth-Device`(ward 디바이스 id)·`X-Auth-Device-Status` 헤더가 추가로 간다.
 - OIDC 로그인(네이티브 앱·CLI)은 v1 에선 기록만 한다.
-- 거부 안내: 앱 nginx 에 `error_page 403 = @zt_denied;` 와 `deploy/zt-denied.snippet.conf` 의 named location 을 넣으면
+- 거부 안내: 앱 nginx 에 `error_page 403 = @zt_denied;` 와 `deploy/snippets/zt-denied.conf` 의 named location 을 넣으면
   `/auth/denied` 가 사유(기기 없음·미준수·ward 오류)와 조치 방법을 보여 주고, 그 사이 준수로 바뀌면 원래 주소로 돌려보낸다.
 - 관리 콘솔 "제로트러스트" 탭에서 판정 기록(이메일·앱·IP·기기·판정)과 현재 설정을 본다. 설정은 env 로만 바꾼다.
 
@@ -135,7 +135,7 @@ server {
     auth_request_set $auth_email $upstream_http_x_auth_email;
     proxy_set_header X-Auth-Email $auth_email;
     error_page 401 = @login;
-    error_page 403 = @zt_denied;   # 제로트러스트 거부 → 안내 페이지 (deploy/zt-denied.snippet.conf)
+    error_page 403 = @zt_denied;   # 제로트러스트 거부 → 안내 페이지 (deploy/snippets/zt-denied.conf)
     proxy_pass http://app;
   }
 
