@@ -172,8 +172,9 @@ export class ZeroTrust {
     if (this.cache.size > 5000) this.cache.clear();
     try {
       await this.record(input, result);
-    } catch {
-      /* 기록 실패는 판정에 영향 없음 */
+    } catch (err) {
+      // 기록 실패는 판정에 영향 없지만, 조용히 삼키면 운영에서 "기록이 안 쌓인다"를 못 잡는다(2026-11-04 실제로 겪음).
+      console.error('zt_checks 기록 실패', (err as Error).message);
     }
     return result;
   }
