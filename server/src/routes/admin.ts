@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { query } from '../db/pool.js';
 import { SESSION_COOKIE, getSessionUser, type SessionUser } from '../auth/session.js';
+import { config } from '../config.js';
 
 const ALLOWED_GRANT_TYPES = [
   'authorization_code',
@@ -230,5 +231,55 @@ export function registerAdminRoutes(app: FastifyInstance): void {
           [n],
         );
     return rows;
+  });
+
+  // ---- 제로트러스트(ward 디바이스 상태 판정) ----
+  app.get('/api/admin/zt/config', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const z = config.zt;
+    return {
+      mode: z.mode,
+      ward_url: z.wardUrl,
+      ward_public_url: z.wardPublicUrl,
+      secret_set: Boolean(z.wardSecret),
+      fail_open: z.failOpen,
+      cache_sec: z.cacheSec,
+      timeout_ms: z.timeoutMs,
+      exempt_emails: z.exemptEmails,
+      exempt_hosts: z.exemptHosts,
+    };
+  });
+
+  app.get('/api/admin/zt/checks', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const { email, limit, denied } = req.query as { email?: string; limit?: string; denied?: string };
+    const n = Math.min(parseInt(limit ?? '200', 10) || 200, 1000);
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (email) {
+      params.push(`%${email}%`);
+      where.push(`email ILIKE $${params.length}`);
+    }
+    if (denied === '1') where.push('allowed = false');
+    params.push(n);
+    const { rows } = await query(
+      `SELECT id, email, host, ip, verdict, device_id, device_hostname, mode, allowed, error, created_at
+       FROM zt_checks ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+       ORDER BY id DESC LIMIT $${params.length}`,
+      params,
+    );
+    return rows;
+  });
+
+  app.get('/api/admin/zt/stats', async (req, reply) => {
+    const admin = await requireAdmin(req, reply);
+    if (!admin) return;
+    const { rows } = await query(
+      `SELECT verdict, count(*)::int AS n, bool_or(NOT allowed) AS any_denied
+       FROM zt_checks WHERE created_at > now() - interval '24 hours' GROUP BY verdict`,
+    );
+    return { last_24h: rows };
   });
 }

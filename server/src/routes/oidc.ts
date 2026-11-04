@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { oidc } from '../oidc/provider.js';
 import { SESSION_COOKIE, getSessionUser } from '../auth/session.js';
+import { clientIp, zeroTrust } from '../zt/index.js';
 
 const MOUNT = '/oidc';
 
@@ -32,6 +33,12 @@ export function registerOidcRoutes(app: FastifyInstance): void {
     }
 
     if (details.prompt.name === 'login') {
+      // 제로트러스트 v1: OIDC 로그인은 기록만 하고 막지 않는다(네이티브 앱·CLI 는 기기 바인딩이 다르다).
+      if (zeroTrust.mode !== 'off') {
+        zeroTrust
+          .check({ email: user.email, host: `oidc:${String(details.params.client_id ?? '')}`, ip: clientIp(req) })
+          .catch(() => {});
+      }
       return finished(req, reply, { login: { accountId: String(user.id) } });
     }
 

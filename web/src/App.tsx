@@ -3,8 +3,9 @@ import { api, type Me } from './api';
 import { UsersPage } from './pages/UsersPage';
 import { AuditPage } from './pages/AuditPage';
 import { ClientsPage } from './pages/ClientsPage';
+import { ZtPage } from './pages/ZtPage';
 
-type Tab = 'users' | 'clients' | 'audit';
+type Tab = 'users' | 'clients' | 'audit' | 'zt';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -43,10 +44,14 @@ export function App() {
             <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
               감사 로그
             </button>
+            <button className={tab === 'zt' ? 'active' : ''} onClick={() => setTab('zt')}>
+              제로트러스트
+            </button>
           </nav>
           {tab === 'users' && <UsersPage me={me} />}
           {tab === 'clients' && <ClientsPage />}
           {tab === 'audit' && <AuditPage />}
+          {tab === 'zt' && <ZtPage />}
         </>
       ) : (
         <div className="center">

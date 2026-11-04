@@ -73,6 +73,27 @@ const migrations: { name: string; sql: string }[] = [
         ADD COLUMN token_endpoint_auth_method TEXT NOT NULL DEFAULT 'client_secret_post';
     `,
   },
+  {
+    name: '005_zt_checks',
+    sql: `
+      -- 제로트러스트 판정 기록. forward-auth 는 요청마다 불리므로 캐시 TTL(기본 60초) 안에서는 1건만 남는다.
+      CREATE TABLE zt_checks (
+        id BIGSERIAL PRIMARY KEY,
+        email TEXT NOT NULL,
+        host TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        device_id TEXT,
+        device_hostname TEXT,
+        mode TEXT NOT NULL,
+        allowed BOOLEAN NOT NULL,
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX zt_checks_created ON zt_checks (created_at DESC);
+      CREATE INDEX zt_checks_email ON zt_checks (email, created_at DESC);
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {

@@ -497,3 +497,14 @@ td code {
     min-height: 40vh;
   }
 }
+
+/* 제로트러스트 탭 */
+.zt-config { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.toolbar .filter { margin: 0; }
+.badge.zt-compliant { background: #dcfce7; color: #166534; }
+.badge.zt-noncompliant, .badge.zt-no_device, .badge.denied { background: #fee2e2; color: #991b1b; }
+.badge.zt-unknown, .badge.zt-error { background: #fef3c7; color: #92400e; }
+.badge.zt-exempt, .badge.zt-off, .badge.zt-monitor { background: #e5e7eb; color: #374151; }
+.badge.zt-enforce { background: #dbeafe; color: #1e40af; }
+.denied-row td { background: rgba(239, 68, 68, 0.06); }

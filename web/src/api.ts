@@ -58,6 +58,32 @@ export interface OidcClient {
   client_secret?: string;
 }
 
+export interface ZtConfig {
+  mode: 'off' | 'monitor' | 'enforce';
+  ward_url: string;
+  ward_public_url: string;
+  secret_set: boolean;
+  fail_open: boolean;
+  cache_sec: number;
+  timeout_ms: number;
+  exempt_emails: string[];
+  exempt_hosts: string[];
+}
+
+export interface ZtCheck {
+  id: number;
+  email: string;
+  host: string;
+  ip: string;
+  verdict: string;
+  device_id: string | null;
+  device_hostname: string | null;
+  mode: string;
+  allowed: boolean;
+  error: string | null;
+  created_at: string;
+}
+
 export const api = {
   me: () => request<Me>('/api/me'),
   clients: () => request<OidcClient[]>('/api/admin/clients'),
@@ -78,4 +104,12 @@ export const api = {
     request<{ revoked: number }>(`/api/admin/users/${id}/sessions`, { method: 'DELETE' }),
   events: (email?: string) =>
     request<LoginEvent[]>(`/api/admin/events${email ? `?email=${encodeURIComponent(email)}` : ''}`),
+  ztConfig: () => request<ZtConfig>('/api/admin/zt/config'),
+  ztChecks: (email?: string, deniedOnly = false) => {
+    const q = new URLSearchParams();
+    if (email) q.set('email', email);
+    if (deniedOnly) q.set('denied', '1');
+    const qs = q.toString();
+    return request<ZtCheck[]>(`/api/admin/zt/checks${qs ? `?${qs}` : ''}`);
+  },
 };

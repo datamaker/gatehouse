@@ -5,6 +5,11 @@ function required(name: string): string {
 }
 
 const publicUrl = (process.env.GATEHOUSE_PUBLIC_URL ?? '').replace(/\/$/, '');
+const list = (v: string | undefined): string[] =>
+  (v ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 const port = parseInt(process.env.PORT ?? '9100', 10);
 
 export const config = {
@@ -43,7 +48,28 @@ export const config = {
     .split(',')
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean),
+  /**
+   * 제로트러스트(ward 디바이스 상태 판정). off 면 아무것도 하지 않는다.
+   * monitor 는 기록만, enforce 는 compliant 기기에서만 forward-auth 를 통과시킨다.
+   */
+  zt: {
+    mode: (['off', 'monitor', 'enforce'] as const).find((m) => m === (process.env.GATEHOUSE_ZT_MODE ?? 'off')) ?? 'off',
+    wardUrl: (process.env.GATEHOUSE_WARD_URL ?? 'http://ward:9600').replace(/\/$/, ''),
+    wardSecret: process.env.GATEHOUSE_WARD_SECRET ?? '',
+    /** ward 가 안 닿을 때 통과(true, 기본) / 차단(false). */
+    failOpen: (process.env.GATEHOUSE_ZT_FAIL_OPEN ?? 'true') !== 'false',
+    cacheSec: parseInt(process.env.GATEHOUSE_ZT_CACHE_SEC ?? '60', 10),
+    timeoutMs: parseInt(process.env.GATEHOUSE_ZT_TIMEOUT_MS ?? '1000', 10),
+    exemptEmails: list(process.env.GATEHOUSE_ZT_EXEMPT_EMAILS),
+    exemptHosts: list(process.env.GATEHOUSE_ZT_EXEMPT_HOSTS),
+    /** 사용자에게 보여 줄 ward 콘솔 주소. */
+    wardPublicUrl: process.env.GATEHOUSE_WARD_PUBLIC_URL ?? 'https://ward.datasee.co.kr',
+  },
 };
+
+if (config.zt.mode !== 'off' && !config.zt.wardSecret) {
+  console.warn(`GATEHOUSE_ZT_MODE=${config.zt.mode} 인데 GATEHOUSE_WARD_SECRET 이 없습니다. ward 조회는 전부 실패(fail-${config.zt.failOpen ? 'open' : 'closed'})합니다`);
+}
 
 if (config.redirectDomains.length === 0) {
   config.redirectDomains = [
