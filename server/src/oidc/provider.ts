@@ -37,6 +37,13 @@ export async function initOidc(): Promise<Provider> {
       profile: ['name', 'picture'],
     },
     pkce: { required: () => true },
+    // oidc-provider refuses any request carrying an Origin header unless this
+    // says otherwise. Browser-based public clients (the vault Chrome extension,
+    // a chrome-extension:// origin) call the token endpoint directly, so allow
+    // exactly that pairing. Confidential clients exchange server-side and never
+    // send an Origin; nothing else is opened up.
+    clientBasedCORS: (_ctx, origin, client) =>
+      client.tokenEndpointAuthMethod === 'none' && origin.startsWith('chrome-extension://'),
     // Put email/name claims in the id_token too, not only userinfo — some
     // integrations (ALB, simple middlewares) never call userinfo.
     conformIdTokenClaims: false,
