@@ -94,6 +94,23 @@ const migrations: { name: string; sql: string }[] = [
       CREATE INDEX zt_checks_email ON zt_checks (email, created_at DESC);
     `,
   },
+  {
+    name: '006_sliding_sessions',
+    sql: `
+      -- sliding 세션: expires_at 은 유휴 만료(활동마다 연장), absolute_expires_at 은 로그인 기준 상한.
+      ALTER TABLE sessions
+        ADD COLUMN last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        ADD COLUMN absolute_expires_at TIMESTAMPTZ;
+      -- 기존(고정 12h) 세션은 새 기본 정책(유휴 24h, 상한 7일)으로 옮긴다.
+      -- 만료된 세션은 건드리지 않는다(상한도 과거로 두어 그대로 정리되게).
+      UPDATE sessions
+      SET absolute_expires_at = created_at + interval '168 hours',
+          expires_at = LEAST(now() + interval '24 hours', created_at + interval '168 hours')
+      WHERE expires_at > now();
+      UPDATE sessions SET absolute_expires_at = expires_at WHERE absolute_expires_at IS NULL;
+      ALTER TABLE sessions ALTER COLUMN absolute_expires_at SET NOT NULL;
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {

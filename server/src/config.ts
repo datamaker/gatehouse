@@ -34,7 +34,17 @@ export const config = {
   cookieDomain: process.env.GATEHOUSE_COOKIE_DOMAIN ?? '',
   /** Secret for signing the short-lived OAuth state cookie. */
   cookieSecret: process.env.GATEHOUSE_COOKIE_SECRET ?? '',
-  sessionTtlHours: parseInt(process.env.GATEHOUSE_SESSION_TTL_HOURS ?? '12', 10),
+  /**
+   * 세션 수명(sliding). 유휴: 마지막 활동 뒤 이 시간 안에 요청이 없으면 끝.
+   * 절대 상한: 로그인 뒤 이 시간이 지나면 활동과 무관하게 끝. 연장은
+   * touch 간격마다 한 번만 DB 에 쓴다(forward-auth 는 요청마다 불린다).
+   */
+  sessionIdleHours: parseInt(
+    process.env.GATEHOUSE_SESSION_IDLE_HOURS ?? process.env.GATEHOUSE_SESSION_TTL_HOURS ?? '24',
+    10,
+  ),
+  sessionMaxHours: parseInt(process.env.GATEHOUSE_SESSION_MAX_HOURS ?? '168', 10),
+  sessionTouchMinutes: parseInt(process.env.GATEHOUSE_SESSION_TOUCH_MINUTES ?? '10', 10),
   /** Emails that are granted admin on sign-in (bootstrap; admins can promote others in the console). */
   adminEmails: (process.env.GATEHOUSE_ADMIN_EMAILS ?? '')
     .split(',')
@@ -69,6 +79,14 @@ export const config = {
 
 if (config.zt.mode !== 'off' && !config.zt.wardSecret) {
   console.warn(`GATEHOUSE_ZT_MODE=${config.zt.mode} 인데 GATEHOUSE_WARD_SECRET 이 없습니다. ward 조회는 전부 실패(fail-${config.zt.failOpen ? 'open' : 'closed'})합니다`);
+}
+
+if (process.env.GATEHOUSE_SESSION_TTL_HOURS && !process.env.GATEHOUSE_SESSION_IDLE_HOURS) {
+  console.warn('GATEHOUSE_SESSION_TTL_HOURS 는 더 이상 쓰지 않습니다. GATEHOUSE_SESSION_IDLE_HOURS(유휴) / GATEHOUSE_SESSION_MAX_HOURS(절대 상한) 로 바꾸세요. 지금은 유휴 시간으로 해석합니다');
+}
+if (config.sessionMaxHours < config.sessionIdleHours) {
+  console.warn(`GATEHOUSE_SESSION_MAX_HOURS(${config.sessionMaxHours}) < IDLE(${config.sessionIdleHours}) — 상한을 유휴 시간으로 맞춥니다`);
+  config.sessionMaxHours = config.sessionIdleHours;
 }
 
 if (config.redirectDomains.length === 0) {

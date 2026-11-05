@@ -20,6 +20,8 @@
 - 첫 로그인 시 사용자 레코드가 자동 생성됩니다(JIT provisioning).
 - 모든 로그인/거부/로그아웃은 `login_events`에 감사 기록됩니다.
 - 세션 쿠키는 `GATEHOUSE_COOKIE_DOMAIN`(예: `datasee.co.kr`) 전체 서브도메인에서 공유됩니다.
+- 세션은 sliding 방식입니다: 활동이 있으면 유휴 만료(기본 24h)가 밀리고, 로그인 뒤 절대 상한(기본 7일)이 지나면 끝납니다.
+  평일에 매일 쓰면 주 1회 로그인이 됩니다. **퇴사·분실 처리는 콘솔에서 사용자 비활성화**(세션 즉시 삭제) — Google 계정만 끊어서는 남은 세션이 상한까지 살아 있습니다.
 
 ## 설정
 
@@ -40,7 +42,9 @@
 | `GATEHOUSE_ALLOWED_DOMAINS` | 허용할 Workspace 도메인 (comma) | `datasee.co.kr` |
 | `GATEHOUSE_COOKIE_DOMAIN` | 세션 쿠키 도메인, 예: `datasee.co.kr` | (host-only) |
 | `GATEHOUSE_COOKIE_SECRET` | state 쿠키 서명 시크릿 | https에서 필수 |
-| `GATEHOUSE_SESSION_TTL_HOURS` | 세션 수명 | `12` |
+| `GATEHOUSE_SESSION_IDLE_HOURS` | 세션 유휴 만료(활동마다 연장) | `24` |
+| `GATEHOUSE_SESSION_MAX_HOURS` | 세션 절대 상한(로그인 기준) | `168` |
+| `GATEHOUSE_SESSION_TOUCH_MINUTES` | 활동 기록(연장) 최소 간격 | `10` |
 | `GATEHOUSE_ADMIN_EMAILS` | 로그인 시 admin 권한을 받을 이메일 (comma) | (없음) |
 | `GATEHOUSE_REDIRECT_DOMAINS` | 로그인 후 rd 리다이렉트 허용 도메인 | cookie+allowed 도메인 |
 | `DATABASE_URL` | Postgres | localhost:5435 |

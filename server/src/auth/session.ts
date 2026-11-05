@@ -14,7 +14,10 @@ export function sessionCookieOptions(): CookieSerializeOptions {
     httpOnly: true,
     secure: isSecure,
     sameSite: 'lax',
-    maxAge: config.sessionTtlHours * 3600,
+    // 쿠키는 절대 상한만큼 살린다. 실제 만료는 서버(sessions.expires_at)가 결정하므로
+    // 쿠키가 더 오래 남아 있어도 해가 없고, 유휴 연장 때 쿠키를 다시 내릴 필요가 없다
+    // (forward-auth 의 auth_request 응답은 Set-Cookie 를 브라우저에 전달하지 않는다).
+    maxAge: config.sessionMaxHours * 3600,
     ...(config.cookieDomain ? { domain: config.cookieDomain } : {}),
   };
 }
@@ -44,19 +47,40 @@ export async function createSession(
 ): Promise<string> {
   const token = randomBytes(32).toString('base64url');
   await query(
-    `INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent)
-     VALUES ($1, $2, now() + make_interval(hours => $3), $4, $5)`,
-    [hashToken(token), userId, config.sessionTtlHours, ip ?? null, userAgent ?? null],
+    `INSERT INTO sessions (token_hash, user_id, expires_at, absolute_expires_at, last_seen_at, ip, user_agent)
+     VALUES ($1, $2,
+             LEAST(now() + make_interval(hours => $3), now() + make_interval(hours => $4)),
+             now() + make_interval(hours => $4),
+             now(), $5, $6)`,
+    [hashToken(token), userId, config.sessionIdleHours, config.sessionMaxHours, ip ?? null, userAgent ?? null],
   );
   return token;
 }
 
+/**
+ * 세션 조회 + sliding 연장을 한 번의 왕복으로. 살아 있는 세션이면 마지막 touch 가
+ * touch 간격보다 오래됐을 때만 expires_at 을 `now()+유휴` 로 밀되 절대 상한은 넘지 않는다.
+ * (WITH 안의 UPDATE 는 결과를 참조하지 않아도 정확히 한 번 실행된다.)
+ */
 export async function getSessionUser(token: string): Promise<SessionUser | null> {
   const { rows } = await query<SessionUser>(
-    `SELECT u.id, u.email, u.name, u.hd, u.picture, u.is_admin
-     FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > now() AND u.is_active`,
-    [hashToken(token)],
+    `WITH live AS (
+       SELECT id, user_id, last_seen_at, absolute_expires_at
+       FROM sessions
+       WHERE token_hash = $1 AND expires_at > now() AND absolute_expires_at > now()
+     ),
+     touched AS (
+       UPDATE sessions s
+       SET last_seen_at = now(),
+           expires_at = LEAST(now() + make_interval(hours => $2), live.absolute_expires_at)
+       FROM live
+       WHERE s.id = live.id
+         AND live.last_seen_at < now() - make_interval(mins => $3)
+     )
+     SELECT u.id, u.email, u.name, u.hd, u.picture, u.is_admin
+     FROM live JOIN users u ON u.id = live.user_id
+     WHERE u.is_active`,
+    [hashToken(token), config.sessionIdleHours, config.sessionTouchMinutes],
   );
   return rows[0] ?? null;
 }
@@ -67,7 +91,7 @@ export async function destroySession(token: string): Promise<void> {
 
 export function startSessionCleanup(): void {
   const sweep = () =>
-    query('DELETE FROM sessions WHERE expires_at < now()').catch((err) =>
+    query('DELETE FROM sessions WHERE expires_at < now() OR absolute_expires_at < now()').catch((err) =>
       console.error('session cleanup failed', err),
     );
   sweep();
