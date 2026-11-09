@@ -113,8 +113,12 @@ forward-auth 판정에 "사람"뿐 아니라 "기기 상태"를 넣는다. ward(
    GATEHOUSE_COOKIE_SECRET=$(openssl rand -base64 32)
    GATEHOUSE_ADMIN_EMAILS=datamaker@datasee.co.kr
    POSTGRES_PASSWORD=$(openssl rand -hex 16)
+   # 항상 tls 오버레이까지 포함(nginx + gatehouse↔ward 네트워크). 이게 없으면 `docker compose up gatehouse` 가
+   # 기본 파일만 읽어 ward_default 없이 재생성되고, 제로트러스트 조회가 매번 1초 타임아웃 → 모든 SSO 앱 API 가 1초 느려진다(2026-11-05 사건).
+   COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml
    ```
 3. `docker compose up -d --build`
+   (`COMPOSE_FILE` 덕에 `-f` 를 매번 안 붙여도 된다. 배포 뒤 `docker inspect gatehouse-gatehouse-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'` 에 `ward_default` 가 보여야 한다)
 4. 앞단 TLS 종료(nginx/Caddy/ALB)에서 `auth.datasee.co.kr` → `localhost:9100` 프록시.
    `X-Forwarded-For`/`X-Forwarded-Proto` 전달 필수 (`trustProxy` 사용 중)
 5. 보안그룹에서 9100 포트는 외부 차단, 프록시 경유만 허용
