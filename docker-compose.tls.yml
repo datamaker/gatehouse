@@ -25,6 +25,7 @@ services:
       - notebook
       - ward
       - forager
+      - census
     restart: unless-stopped
 
   # 제로트러스트: gatehouse 가 ward 컨테이너(/api/zt/posture)를 직접 부른다(nginx 를 거치면 SSO 벽에 걸린다).
@@ -63,4 +64,7 @@ networks:
   forager:
     external: true
     name: forager_default
-
+  # census.datasee.co.kr (deploy/census.conf) 가 census:9700 을 proxy_pass 한다.
+  census:
+    external: true
+    name: census_default
