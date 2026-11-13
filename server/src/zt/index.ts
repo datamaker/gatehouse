@@ -31,6 +31,7 @@ export const zeroTrust = new ZeroTrust(
     timeoutMs: config.zt.timeoutMs,
     exemptEmails: config.zt.exemptEmails,
     exemptHosts: config.zt.exemptHosts,
+    enforceEmails: config.zt.enforceEmails,
   },
   recordCheck,
 );
@@ -39,4 +40,11 @@ export const zeroTrust = new ZeroTrust(
  *  헤더를 직접 읽지 않는다 — 첫 항목을 읽으면 브라우저가 붙인 값으로 남의 기기 IP 를 사칭할 수 있다(2026-11-04 운영에서 확인). */
 export function clientIp(req: { ip: string }): string {
   return req.ip;
+}
+
+/** oidc-provider(Koa) 쪽처럼 fastify 를 거치지 않는 raw 요청용. clientIp 와 같은 규칙: nginx 가 쓴 X-Forwarded-For 의 마지막 항목만 믿는다. */
+export function rawClientIp(req: { headers: Record<string, string | string[] | undefined>; socket: { remoteAddress?: string } }): string {
+  const xff = req.headers['x-forwarded-for'];
+  const last = (Array.isArray(xff) ? xff.join(',') : (xff ?? '')).split(',').pop()?.trim();
+  return last || req.socket.remoteAddress || '';
 }

@@ -4,8 +4,9 @@ import { UsersPage } from './pages/UsersPage';
 import { AuditPage } from './pages/AuditPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { ZtPage } from './pages/ZtPage';
+import { AppsPage } from './pages/AppsPage';
 
-type Tab = 'users' | 'clients' | 'audit' | 'zt';
+type Tab = 'users' | 'clients' | 'apps' | 'audit' | 'zt';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -41,6 +42,9 @@ export function App() {
             <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}>
               OIDC 클라이언트
             </button>
+            <button className={tab === 'apps' ? 'active' : ''} onClick={() => setTab('apps')}>
+              앱 접근
+            </button>
             <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
               감사 로그
             </button>
@@ -50,6 +54,7 @@ export function App() {
           </nav>
           {tab === 'users' && <UsersPage me={me} />}
           {tab === 'clients' && <ClientsPage />}
+          {tab === 'apps' && <AppsPage />}
           {tab === 'audit' && <AuditPage />}
           {tab === 'zt' && <ZtPage />}
         </>

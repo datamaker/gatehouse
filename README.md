@@ -57,6 +57,9 @@
 | `GATEHOUSE_ZT_TIMEOUT_MS` | ward 조회 타임아웃 | `1000` |
 | `GATEHOUSE_ZT_EXEMPT_EMAILS` | 판정 면제 이메일 (comma) | (없음) |
 | `GATEHOUSE_ZT_EXEMPT_HOSTS` | 판정 면제 앱 호스트 (comma, `*.` 와일드카드 가능) | (없음) |
+| `GATEHOUSE_ZT_ENFORCE_EMAILS` | 전역 모드가 `monitor` 여도 `enforce` 를 적용할 사용자 (comma, 대소문자 무시). 전역 `off` 면 효과 없음 | (없음) |
+| `GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS` | OIDC 로그인 단계에서 기기 판정으로 막지 않을 client_id (comma). device grant 클라이언트는 자동 제외 | (없음) |
+| `GATEHOUSE_INTERNAL_SECRET` | `GET /internal/account`(계정 상태 조회) 공유 시크릿. 비어 있으면 라우트가 없다(404) | (없음) |
 
 ### 3. 실행
 
@@ -84,20 +87,40 @@ forward-auth 판정에 "사람"뿐 아니라 "기기 상태"를 넣는다. ward(
   그 외(`noncompliant`, `unknown`, `no_device`)는 403. ward 가 안 닿거나 1초를 넘기면 `GATEHOUSE_ZT_FAIL_OPEN` 대로.
 - forward-auth 는 요청마다 불리지만 사용자+IP 로 60초 캐시하므로 ward 는 분당 1회만 맞고, 기록도 그때 1건만 남는다.
 - 앱에는 `X-Auth-Device`(ward 디바이스 id)·`X-Auth-Device-Status` 헤더가 추가로 간다.
-- OIDC 로그인(네이티브 앱·CLI)은 v1 에선 기록만 한다.
+- 선택 사용자만 차단: 전역은 `monitor` 로 둔 채 `GATEHOUSE_ZT_ENFORCE_EMAILS` 에 넣은 사용자에게만 `enforce` 를 적용한다
+  (`zt_checks.mode` 에는 그 사용자에게 실제로 적용된 모드가 남는다). 면제(`EXEMPT_*`)가 이 목록보다 우선하고, fail-open 설정은 그대로 따른다.
+- OIDC 로그인: 실효 모드가 `enforce` 인 사용자는 `authorization_code` 웹 클라이언트 로그인도 막는다(거부 안내 페이지, 코드 미발급).
+  device grant 를 쓰는 클라이언트(CLI·VPN·에이전트)는 승인하는 브라우저와 기기의 IP 가 달라 막지 않고 기록만 하며,
+  `GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS` 로 클라이언트를 더 뺄 수 있다. 그 외에는 지금처럼 기록만 한다.
 - 거부 안내: 앱 nginx 에 `error_page 403 = @zt_denied;` 와 `deploy/snippets/zt-denied.conf` 의 named location 을 넣으면
   `/auth/denied` 가 사유(기기 없음·미준수·ward 오류)와 조치 방법을 보여 주고, 그 사이 준수로 바뀌면 원래 주소로 돌려보낸다.
 - 관리 콘솔 "제로트러스트" 탭에서 판정 기록(이메일·앱·IP·기기·판정)과 현재 설정을 본다. 설정은 env 로만 바꾼다.
 
-테스트: `npm test` — 가짜 ward 서버로 off/monitor/enforce × 준수/미준수/기기없음/장애(fail-open·closed)/타임아웃/캐시/면제를 검증한다.
+테스트: `npm test` — 가짜 ward 서버로 off/monitor/enforce × 준수/미준수/기기없음/장애(fail-open·closed)/타임아웃/캐시/면제/사용자별 enforce 를 검증한다.
+
+## 회수 전파 · 앱 접근 정책
+
+- **로그아웃**: `GET /logout` 은 확인 페이지만 보여 주고(링크·이미지 한 번으로 로그아웃시키는 CSRF 방지), 그 페이지의 `POST /logout` 이 실제로 끊는다.
+  `?rd=` 는 로그인과 같은 검증(같은 origin 상대 경로 또는 허용 도메인)을 거친다.
+- **OIDC 세션**: 로그아웃·관리자 "세션 종료"·비활성화는 gatehouse 세션뿐 아니라 그 계정의 OP 세션·grant·코드·토큰도 지운다.
+  OP 세션 수명은 유휴 만료(`GATEHOUSE_SESSION_IDLE_HOURS`)를 넘지 않고, authorization·device 요청마다 그 브라우저의 gatehouse 세션이
+  살아 있고 같은 계정인지 확인한다(아니면 gatehouse 로그인으로 보낸다).
+- **계정 상태 조회**: 자체 세션·토큰을 가진 앱은 `GET /internal/account?email=` (헤더 `X-Gatehouse-Secret`)로 묻는다.
+  `200 {"email","active","revoked_before"}` / 모르는 이메일 `404 {"active":false}` / 시크릿 불일치 `401`.
+  `revoked_before` 는 관리자 세션 종료·비활성화 때 now() 로 갱신되며, 그 이전에 발급된 세션·토큰은 무효로 취급해야 한다.
+- **앱 접근 정책**: 콘솔 "앱 접근" 탭에서 앱(forward-auth 호스트 또는 `oidc:<client_id>`)을 `제한` 으로 바꾸면 허용 목록의 사용자만 통과한다.
+  정책이 없거나 `전체 허용` 이면 활성 사용자 전원(기본). forward-auth 는 `403` + `X-Auth-Denied: app_access`, OIDC 는 코드 대신 거부 안내 페이지.
+  `/auth/denied` 는 앱 접근 거부와 기기 거부를 다른 문구로 안내한다. 판정은 30초 캐시하고 관리자 변경 시 바로 비운다.
+- **기기 로그인(device flow) 승인 화면**: 요청한 앱·IP·user-agent·시각을 보여 주고 직접 승인해야 한다(`?user_code=` 로 열어도 자동 승인되지 않는다).
 
 ## 관리 콘솔
 
 `GATEHOUSE_ADMIN_EMAILS`에 등록된 이메일로 로그인하면 루트(`/`)에서 관리 콘솔이 열립니다:
 
 - **사용자** — 활성/비활성 토글(비활성화 즉시 전체 앱에서 세션 무효화), admin 권한 부여, 세션 강제 종료
-- **감사 로그** — 로그인/로그아웃/거부 이력, 이메일 필터
-- **제로트러스트** — ward 기기 상태 판정 기록과 현재 모드·면제 설정(읽기 전용)
+- **앱 접근** — 앱별 전체 허용/제한 전환, 허용 사용자 추가·제거
+- **감사 로그** — 로그인/로그아웃/거부 이력(이메일 필터)과 관리자 작업 이력(사용자·세션·OIDC 클라이언트·앱 정책 변경, 시크릿은 기록하지 않음)
+- **제로트러스트** — ward 기기 상태 판정 기록과 현재 모드·면제·사용자별 차단 목록(읽기 전용)
 
 일반 사용자는 자신의 프로필만 보입니다. 자기 자신을 비활성화하거나 강등하는 건 막혀 있습니다(락아웃 방지).
 

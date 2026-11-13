@@ -68,6 +68,36 @@ export interface ZtConfig {
   timeout_ms: number;
   exempt_emails: string[];
   exempt_hosts: string[];
+  enforce_emails: string[];
+  enforce_count: number;
+  oidc_exempt_clients: string[];
+}
+
+export interface AdminEvent {
+  id: number;
+  actor_email: string;
+  action: string;
+  target: string;
+  detail: Record<string, unknown>;
+  ip: string | null;
+  created_at: string;
+}
+
+export interface AppUser {
+  id: number;
+  email: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface AppPolicy {
+  app_key: string;
+  kind: 'host' | 'oidc';
+  name: string;
+  mode: 'all' | 'restricted';
+  note: string | null;
+  updated_at: string | null;
+  users: AppUser[];
 }
 
 export interface ZtCheck {
@@ -104,6 +134,15 @@ export const api = {
     request<{ revoked: number }>(`/api/admin/users/${id}/sessions`, { method: 'DELETE' }),
   events: (email?: string) =>
     request<LoginEvent[]>(`/api/admin/events${email ? `?email=${encodeURIComponent(email)}` : ''}`),
+  adminEvents: (q?: string) =>
+    request<AdminEvent[]>(`/api/admin/audit${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  apps: () => request<AppPolicy[]>('/api/admin/apps'),
+  setAppPolicy: (key: string, body: { mode: 'all' | 'restricted'; note?: string | null }) =>
+    request<unknown>(`/api/admin/apps/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  addAppUser: (key: string, userId: number) =>
+    request<{ added: boolean }>(`/api/admin/apps/${encodeURIComponent(key)}/users/${userId}`, { method: 'PUT' }),
+  removeAppUser: (key: string, userId: number) =>
+    request<{ removed: boolean }>(`/api/admin/apps/${encodeURIComponent(key)}/users/${userId}`, { method: 'DELETE' }),
   ztConfig: () => request<ZtConfig>('/api/admin/zt/config'),
   ztChecks: (email?: string, deniedOnly = false) => {
     const q = new URLSearchParams();

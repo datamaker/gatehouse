@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { oidc } from '../oidc/provider.js';
+import { query } from '../db/pool.js';
 import { SESSION_COOKIE, getSessionUser } from '../auth/session.js';
-import { clientIp, zeroTrust } from '../zt/index.js';
+import { clientIp } from '../zt/index.js';
+import { deniedPage } from '../zt/zt.js';
+import { appDeniedPage } from '../auth/appAccess.js';
+import { oidcGate } from '../oidc/gate.js';
+import { config } from '../config.js';
 
 const MOUNT = '/oidc';
 
@@ -32,13 +37,24 @@ export function registerOidcRoutes(app: FastifyInstance): void {
       return reply.redirect(`/login?rd=${encodeURIComponent(`/oidc-interaction/${details.uid}`)}`);
     }
 
+    // 코드를 내주기 전 관문: 앱 접근 정책 + (enforce 대상이면) 기기 판정. login·consent 어느 단계로 들어와도 본다.
+    // device grant 클라이언트(CLI·VPN·에이전트)는 기기 판정으로 막지 않고 기록만 한다 — oidcGate 가 가린다.
+    const clientId = String(details.params.client_id ?? '');
+    const gate = await oidcGate(user, clientId, clientIp(req), { recordMonitor: details.prompt.name === 'login' });
+    if (!gate.ok) {
+      const html =
+        gate.reason === 'app_access'
+          ? appDeniedPage({ app: await clientName(clientId), email: user.email })
+          : deniedPage({ verdict: gate.zt.verdict, wardUrl: config.zt.wardPublicUrl, hostname: gate.zt.device?.hostname });
+      // interaction 은 끝내지 않는다(코드·토큰이 나가지 않는다). 조치 뒤 이 주소를 새로 고치면 다시 판정한다(10분 안).
+      return reply
+        .code(403)
+        .header('X-Auth-Denied', gate.reason === 'app_access' ? 'app_access' : gate.zt.verdict)
+        .type('text/html; charset=utf-8')
+        .send(html);
+    }
+
     if (details.prompt.name === 'login') {
-      // 제로트러스트 v1: OIDC 로그인은 기록만 하고 막지 않는다(네이티브 앱·CLI 는 기기 바인딩이 다르다).
-      if (zeroTrust.mode !== 'off') {
-        zeroTrust
-          .check({ email: user.email, host: `oidc:${String(details.params.client_id ?? '')}`, ip: clientIp(req) })
-          .catch(() => {});
-      }
       return finished(req, reply, { login: { accountId: String(user.id) } });
     }
 
@@ -60,6 +76,12 @@ export function registerOidcRoutes(app: FastifyInstance): void {
 
     return reply.code(400).send({ error: `unsupported prompt: ${details.prompt.name}` });
   });
+
+  /** 거부 안내에 보여 줄 앱 이름. */
+  async function clientName(clientId: string): Promise<string> {
+    const { rows } = await query<{ name: string }>('SELECT name FROM oidc_clients WHERE client_id = $1', [clientId]);
+    return rows[0]?.name ? `${rows[0].name} (${clientId})` : clientId;
+  }
 
   async function finished(
     req: import('fastify').FastifyRequest,

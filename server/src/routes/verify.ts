@@ -3,6 +3,8 @@ import { baseUrl, config } from '../config.js';
 import { SESSION_COOKIE, getSessionUser, type SessionUser } from '../auth/session.js';
 import { clientIp, zeroTrust } from '../zt/index.js';
 import { deniedPage, type ZtResult } from '../zt/zt.js';
+import { appDeniedPage, isAppAllowed } from '../auth/appAccess.js';
+import { safeRedirect } from './auth.js';
 
 function setIdentityHeaders(reply: FastifyReply, user: SessionUser): void {
   reply.header('X-Auth-User', String(user.id));
@@ -49,6 +51,11 @@ export function registerVerifyRoutes(app: FastifyInstance): void {
     const token = req.cookies[SESSION_COOKIE];
     const user = token ? await getSessionUser(token) : null;
     if (!user) return reply.code(401).send();
+    // 앱 접근 정책이 기기 판정보다 먼저다(권한이 없으면 기기를 고쳐도 소용없다). 신원 헤더는 싣지 않는다.
+    if (!(await isAppAllowed(protectedHost(req), user.id))) {
+      reply.header('X-Auth-Denied', 'app_access');
+      return reply.code(403).send();
+    }
     const zt = await ztCheck(req, user);
     setIdentityHeaders(reply, user);
     setDeviceHeaders(reply, zt);
@@ -65,6 +72,14 @@ export function registerVerifyRoutes(app: FastifyInstance): void {
     const token = req.cookies[SESSION_COOKIE];
     const user = token ? await getSessionUser(token) : null;
     if (user) {
+      const host = protectedHost(req);
+      if (!(await isAppAllowed(host, user.id))) {
+        return reply
+          .code(403)
+          .header('X-Auth-Denied', 'app_access')
+          .type('text/html; charset=utf-8')
+          .send(appDeniedPage({ app: host, email: user.email }));
+      }
       const zt = await ztCheck(req, user);
       if (zt && !zt.allowed) {
         return reply
@@ -83,27 +98,36 @@ export function registerVerifyRoutes(app: FastifyInstance): void {
   });
 
   /**
-   * 기기 거부 안내 페이지. nginx 에서 `error_page 403 = @zt_denied;` →
+   * 거부 안내 페이지(앱 접근 거부·기기 거부 공용). nginx 에서 `error_page 403 = @zt_denied;` →
    * `return 302 https://auth.datasee.co.kr/auth/denied?rd=…` 로 보낸다.
-   * 세션이 있으면 지금 상태로 다시 판정해 보여 준다(캐시 TTL 안이면 같은 결과).
+   * 세션이 있으면 지금 상태로 다시 판정해 사유를 보여 주고(캐시 TTL 안이면 같은 결과),
+   * 그 사이 통과로 바뀌었으면 원래 주소로 돌려보낸다. rd 는 로그인 때와 같은 검증을 거친 것만 쓴다(오픈 리다이렉트 방지).
    */
   app.get('/auth/denied', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
     const user = token ? await getSessionUser(token) : null;
+    const rd = safeRedirect((req.query as { rd?: string }).rd);
+    // 절대 주소 rd 면 그 호스트가 거부된 앱이다. 상대 경로면 gatehouse 자신이라 헤더에서 읽는다.
+    const host = rd && !rd.startsWith('/') ? new URL(rd).host.toLowerCase() : protectedHost(req);
     let verdict = 'unknown';
     let hostname: string | null = null;
-    if (user && zeroTrust.mode !== 'off') {
-      const rd = (req.query as { rd?: string }).rd;
-      let host = protectedHost(req);
-      try {
-        if (rd) host = new URL(rd).host.toLowerCase();
-      } catch {
-        /* rd 가 URL 이 아니면 무시 */
+    if (user) {
+      if (!(await isAppAllowed(host, user.id))) {
+        return reply
+          .code(403)
+          .header('X-Auth-Denied', 'app_access')
+          .type('text/html; charset=utf-8')
+          .send(appDeniedPage({ app: host, email: user.email }));
       }
-      const zt = await zeroTrust.check({ email: user.email, host, ip: clientIp(req) });
-      if (zt.allowed && rd) return reply.redirect(rd); // 그 사이 준수로 바뀌었으면 바로 돌려보낸다
-      verdict = zt.verdict;
-      hostname = zt.device?.hostname ?? null;
+      if (zeroTrust.mode === 'off') {
+        // 기기 판정이 꺼져 있으면 여기 온 이유는 앱 접근 거부뿐인데, 지금은 허용이다(관리자가 권한을 추가했다).
+        if (rd) return reply.redirect(rd);
+      } else {
+        const zt = await zeroTrust.check({ email: user.email, host, ip: clientIp(req) });
+        if (zt.allowed && rd) return reply.redirect(rd); // 그 사이 준수(또는 권한 추가)로 바뀌었으면 바로 돌려보낸다
+        verdict = zt.verdict;
+        hostname = zt.device?.hostname ?? null;
+      }
     }
     return reply
       .code(403)

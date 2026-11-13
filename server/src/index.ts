@@ -12,6 +12,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerVerifyRoutes } from './routes/verify.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerOidcRoutes } from './routes/oidc.js';
+import { registerInternalRoutes } from './routes/internal.js';
 import { initOidc } from './oidc/provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   registerVerifyRoutes(app);
   registerAdminRoutes(app);
   registerOidcRoutes(app);
+  registerInternalRoutes(app, config.internalSecret);
 
   app.get('/healthz', async () => ({ ok: true }));
 
@@ -52,7 +54,12 @@ async function main(): Promise<void> {
     await app.register(fastifyStatic, { root: webDist });
     app.setNotFoundHandler((req, reply) => {
       // SPA fallback for non-API GET routes.
-      if (req.method === 'GET' && !req.url.startsWith('/api/') && !req.url.startsWith('/auth/')) {
+      if (
+        req.method === 'GET' &&
+        !req.url.startsWith('/api/') &&
+        !req.url.startsWith('/auth/') &&
+        !req.url.startsWith('/internal/') // 시크릿이 없어 꺼진 /internal/account 가 SPA(200)로 답하지 않게
+      ) {
         return reply.sendFile('index.html');
       }
       return reply.code(404).send({ error: 'not found' });

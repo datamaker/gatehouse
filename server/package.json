@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
-    "test": "tsx --test src/zt/zt.test.ts src/auth/session.test.ts"
+    "test": "tsx --test src/zt/zt.test.ts src/auth/session.test.ts src/auth/redirect.test.ts src/auth/appAccess.test.ts src/oidc/adapter.test.ts src/routes/internal.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

@@ -38,10 +38,12 @@ export interface ZtOptions {
   timeoutMs: number;
   exemptEmails: string[];
   exemptHosts: string[];
+  /** 전역 모드가 monitor 일 때도 enforce 를 적용할 사용자(소문자 이메일). 전역이 off 면 무시된다. */
+  enforceEmails?: string[];
 }
 
 export interface ZtResult {
-  /** 판정에 쓴 모드. off 면 아무것도 안 한 것. */
+  /** 판정에 쓴 "실효" 모드(사용자별 enforce 반영). off 면 아무것도 안 한 것. */
   mode: ZtMode;
   /** ward 가 준 verdict. 조회 실패면 'error', 면제면 'exempt'. */
   verdict: ZtVerdict | 'error' | 'exempt';
@@ -58,6 +60,8 @@ export interface ZtCheckInput {
   /** forward-auth 가 보호하는 앱 호스트(X-Forwarded-Host) 또는 OIDC client_id. */
   host: string;
   ip: string;
+  /** true 면 이 판정은 기록만 한다(실효 모드를 monitor 로 낮춘다). device grant OIDC 클라이언트처럼 IP 바인딩이 다른 경로용. */
+  monitorOnly?: boolean;
 }
 
 /** ward 에서 사용자의 디바이스 상태를 가져온다. 예외는 던지지 않고 null 을 준다. */
@@ -107,24 +111,49 @@ export function decide(mode: ZtMode, verdict: ZtResult['verdict'], failOpen: boo
   return verdict === 'compliant';
 }
 
+/**
+ * 사용자별 실효 모드. 전역 off 는 무엇으로도 켜지지 않고, 전역 enforce 는 전원 enforce,
+ * 전역 monitor 는 enforce 목록에 있는 사용자만 enforce.
+ */
+export function effectiveMode(globalMode: ZtMode, enforceEmails: readonly string[], email: string): ZtMode {
+  if (globalMode !== 'monitor') return globalMode;
+  return enforceEmails.includes(email.trim().toLowerCase()) ? 'enforce' : 'monitor';
+}
+
 function matchHost(host: string, pattern: string): boolean {
   if (pattern.startsWith('*.')) return host === pattern.slice(2) || host.endsWith(pattern.slice(1));
   return host === pattern;
 }
 
 export class ZeroTrust {
-  private cache = new Map<string, { at: number; result: ZtResult }>();
+  /** ward 조회 결과만 캐시한다. 모드·통과 여부는 호출마다 실효 모드로 다시 계산한다(같은 사용자도 경로에 따라 모드가 다를 수 있다). */
+  private cache = new Map<string, { at: number; verdict: ZtVerdict | 'error'; device: ZtDevice | null; error?: string }>();
   /** email|ip|host → 마지막 기록 시각. */
   private recorded = new Map<string, number>();
+  private enforceList: string[];
 
   constructor(
     private opts: ZtOptions,
     /** fresh 판정마다, 그리고 캐시를 탔어도 그 앱(host)의 TTL 안 첫 접속이면 호출된다(기록용). 실패해도 판정에는 영향이 없어야 한다. */
     private record: (input: ZtCheckInput, result: ZtResult) => Promise<void> | void = () => {},
-  ) {}
+  ) {
+    this.enforceList = (opts.enforceEmails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean);
+  }
 
+  /** 전역 모드. */
   get mode(): ZtMode {
     return this.opts.mode;
+  }
+
+  /** 사용자별 enforce 목록(소문자). */
+  get enforceEmails(): readonly string[] {
+    return this.enforceList;
+  }
+
+  /** 이 사용자에게 실제로 적용되는 모드. monitorOnly 면 enforce 를 monitor 로 낮춘다. */
+  effectiveMode(email: string, monitorOnly = false): ZtMode {
+    const mode = effectiveMode(this.opts.mode, this.enforceList, email);
+    return monitorOnly && mode === 'enforce' ? 'monitor' : mode;
   }
 
   isExempt(email: string, host: string): boolean {
@@ -135,7 +164,7 @@ export class ZeroTrust {
   }
 
   async check(input: ZtCheckInput): Promise<ZtResult> {
-    const mode = this.opts.mode;
+    const mode = this.effectiveMode(input.email, input.monitorOnly);
     if (mode === 'off') return { mode, verdict: 'exempt', allowed: true, device: null, cached: false };
     if (this.isExempt(input.email, input.host)) {
       return { mode, verdict: 'exempt', allowed: true, device: null, cached: false };
@@ -144,37 +173,26 @@ export class ZeroTrust {
     const email = input.email.toLowerCase();
     const key = `${email}|${input.ip}`;
     const now = Date.now();
-    const hit = this.cache.get(key);
-    let result: ZtResult;
+    let hit = this.cache.get(key);
     let fresh = false;
-    if (hit && now - hit.at < this.opts.cacheSec * 1000) {
-      result = { ...hit.result, cached: true };
-    } else {
+    if (!hit || now - hit.at >= this.opts.cacheSec * 1000) {
       fresh = true;
       const fetched = await fetchPosture(this.opts, input.email, input.ip);
-      if (fetched.ok) {
-        const verdict = fetched.posture.verdict;
-        result = {
-          mode,
-          verdict,
-          allowed: decide(mode, verdict, this.opts.failOpen),
-          device: pickDevice(fetched.posture.devices),
-          cached: false,
-        };
-      } else {
-        result = {
-          mode,
-          verdict: 'error',
-          allowed: decide(mode, 'error', this.opts.failOpen),
-          device: null,
-          cached: false,
-          error: fetched.error,
-        };
-      }
-      // 오류는 짧게만 캐시한다(ward 가 돌아오면 바로 반영되게).
-      this.cache.set(key, { at: fetched.ok ? now : now - this.opts.cacheSec * 1000 + 5000, result });
+      hit = fetched.ok
+        ? { at: now, verdict: fetched.posture.verdict, device: pickDevice(fetched.posture.devices) }
+        : // 오류는 짧게만 캐시한다(ward 가 돌아오면 바로 반영되게).
+          { at: now - this.opts.cacheSec * 1000 + 5000, verdict: 'error', device: null, error: fetched.error };
+      this.cache.set(key, hit);
       if (this.cache.size > 5000) this.cache.clear();
     }
+    const result: ZtResult = {
+      mode,
+      verdict: hit.verdict,
+      allowed: decide(mode, hit.verdict, this.opts.failOpen),
+      device: hit.device,
+      cached: !fresh,
+      ...(hit.error ? { error: hit.error } : {}),
+    };
 
     // 기록은 앱(host)마다 TTL 에 한 번. ward 조회 캐시는 사용자+IP 로 묶지만, 기록까지 그 키로 묶으면 60초 안에
     // 들어간 다른 앱이 목록에 아예 안 보인다(2026-11-04 운영에서 확인: vault·redash 접속이 note 뒤에 숨었다).

@@ -1,7 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { ZeroTrust, decide, deniedPage, fetchPosture, pickDevice, type ZtCheckInput, type ZtDevice, type ZtOptions, type ZtResult } from './zt.js';
+import { ZeroTrust, decide, deniedPage, effectiveMode, fetchPosture, pickDevice, type ZtCheckInput, type ZtDevice, type ZtOptions, type ZtResult } from './zt.js';
 
 // 가짜 ward. 이메일별로 응답을 정해 두고, 호출 횟수·지연·오류를 흉내 낸다.
 let server: http.Server;
@@ -162,6 +162,99 @@ describe('ZeroTrust.check', () => {
     assert.equal((await zt.check(input('nodev@datasee.co.kr', 'x.public.datasee.co.kr'))).allowed, true);
     assert.equal((await zt.check(input('nodev@datasee.co.kr', 'status.datasee.co.kr'))).allowed, true);
     assert.equal((await zt.check(input('nodev@datasee.co.kr', 'in.datasee.co.kr'))).allowed, false);
+  });
+});
+
+describe('effectiveMode (사용자별 enforce)', () => {
+  const LIST = ['bad@datasee.co.kr', 'nodev@datasee.co.kr'];
+  test('전역 monitor: 목록 사용자만 enforce (대소문자 무시)', () => {
+    assert.equal(effectiveMode('monitor', LIST, 'bad@datasee.co.kr'), 'enforce');
+    assert.equal(effectiveMode('monitor', LIST, 'BAD@Datasee.co.kr'), 'enforce');
+    assert.equal(effectiveMode('monitor', LIST, 'good@datasee.co.kr'), 'monitor');
+    assert.equal(effectiveMode('monitor', [], 'bad@datasee.co.kr'), 'monitor');
+  });
+  test('전역 off 는 목록이 있어도 off, 전역 enforce 는 전원 enforce', () => {
+    assert.equal(effectiveMode('off', LIST, 'bad@datasee.co.kr'), 'off');
+    assert.equal(effectiveMode('enforce', LIST, 'good@datasee.co.kr'), 'enforce');
+    assert.equal(effectiveMode('enforce', [], 'good@datasee.co.kr'), 'enforce');
+  });
+});
+
+describe('ZeroTrust: 선택 사용자만 enforce', () => {
+  test('전역 monitor + 목록: 목록 사용자는 차단되고 기록의 mode 는 enforce, 나머지는 monitor 로 통과', async () => {
+    const recorded: { email: string; mode: string; allowed: boolean }[] = [];
+    const zt = new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['Bad@Datasee.co.kr'] }), (i, r) => {
+      recorded.push({ email: i.email, mode: r.mode, allowed: r.allowed });
+    });
+    assert.deepEqual([...zt.enforceEmails], ['bad@datasee.co.kr']);
+    assert.equal(zt.mode, 'monitor');
+    assert.equal(zt.effectiveMode('BAD@datasee.co.kr'), 'enforce');
+    assert.equal(zt.effectiveMode('nodev@datasee.co.kr'), 'monitor');
+
+    const bad = await zt.check(input('bad@datasee.co.kr'));
+    assert.equal(bad.mode, 'enforce'); assert.equal(bad.allowed, false); assert.equal(bad.verdict, 'noncompliant');
+    const nodev = await zt.check(input('nodev@datasee.co.kr'));
+    assert.equal(nodev.mode, 'monitor'); assert.equal(nodev.allowed, true); assert.equal(nodev.verdict, 'no_device');
+    assert.deepEqual(recorded, [
+      { email: 'bad@datasee.co.kr', mode: 'enforce', allowed: false },
+      { email: 'nodev@datasee.co.kr', mode: 'monitor', allowed: true },
+    ]);
+  });
+
+  test('목록 사용자라도 준수 기기면 통과', async () => {
+    const zt = new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['good@datasee.co.kr'] }));
+    const r = await zt.check(input('good@datasee.co.kr'));
+    assert.equal(r.mode, 'enforce'); assert.equal(r.allowed, true);
+  });
+
+  test('전역 off 면 목록이 있어도 ward 를 부르지 않고 통과', async () => {
+    const before = calls;
+    const zt = new ZeroTrust(opts({ mode: 'off', enforceEmails: ['bad@datasee.co.kr'] }));
+    const r = await zt.check(input('bad@datasee.co.kr'));
+    assert.equal(r.mode, 'off'); assert.equal(r.allowed, true); assert.equal(calls, before);
+  });
+
+  test('면제 이메일·호스트는 enforce 목록보다 우선', async () => {
+    const zt = new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['bad@datasee.co.kr', 'nodev@datasee.co.kr'], exemptEmails: ['bad@datasee.co.kr'], exemptHosts: ['status.datasee.co.kr'] }));
+    assert.equal((await zt.check(input('bad@datasee.co.kr'))).verdict, 'exempt');
+    assert.equal((await zt.check(input('nodev@datasee.co.kr', 'status.datasee.co.kr'))).allowed, true);
+    assert.equal((await zt.check(input('nodev@datasee.co.kr'))).allowed, false);
+  });
+
+  test('fail-open 설정은 enforce 대상에게도 그대로', async () => {
+    failWith = 500;
+    try {
+      const open = await new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['good@datasee.co.kr'], failOpen: true })).check(input('good@datasee.co.kr'));
+      assert.equal(open.mode, 'enforce'); assert.equal(open.verdict, 'error'); assert.equal(open.allowed, true);
+      const closed = await new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['good@datasee.co.kr'], failOpen: false })).check(input('good@datasee.co.kr'));
+      assert.equal(closed.allowed, false);
+      // 목록 밖 사용자는 fail-closed 여도 monitor 라 통과
+      const other = await new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['good@datasee.co.kr'], failOpen: false })).check(input('bad@datasee.co.kr'));
+      assert.equal(other.mode, 'monitor'); assert.equal(other.allowed, true);
+    } finally {
+      failWith = null;
+    }
+  });
+
+  test('monitorOnly(device grant OIDC 클라이언트): enforce 대상이어도 기록만, 같은 캐시를 써도 경로별로 다시 판정', async () => {
+    const recorded: { host: string; mode: string; allowed: boolean }[] = [];
+    const zt = new ZeroTrust(opts({ mode: 'monitor', enforceEmails: ['bad@datasee.co.kr'] }), (i, r) => {
+      recorded.push({ host: i.host, mode: r.mode, allowed: r.allowed });
+    });
+    const before = calls;
+    const cli = await zt.check({ ...input('bad@datasee.co.kr', 'oidc:opentunnel'), monitorOnly: true });
+    assert.equal(cli.mode, 'monitor'); assert.equal(cli.allowed, true); assert.equal(cli.verdict, 'noncompliant');
+    // 같은 사용자+IP 의 웹 앱 접속은 캐시된 ward 결과로도 enforce 로 막혀야 한다
+    const web = await zt.check(input('bad@datasee.co.kr', 'vault.datasee.co.kr'));
+    assert.equal(web.cached, true); assert.equal(web.mode, 'enforce'); assert.equal(web.allowed, false);
+    assert.equal(calls - before, 1);
+    assert.deepEqual(recorded, [
+      { host: 'oidc:opentunnel', mode: 'monitor', allowed: true },
+      { host: 'vault.datasee.co.kr', mode: 'enforce', allowed: false },
+    ]);
+    // 전역 enforce 에서도 monitorOnly 는 막지 않는다
+    const g = await new ZeroTrust(opts({ mode: 'enforce' })).check({ ...input('bad@datasee.co.kr', 'oidc:opentunnel'), monitorOnly: true });
+    assert.equal(g.mode, 'monitor'); assert.equal(g.allowed, true);
   });
 });
 

@@ -87,6 +87,32 @@ export class GatehouseAdapter {
   }
 }
 
+/**
+ * 한 계정의 OP 상태를 전부 지운다: Session·Grant 와 그 계정으로 발급된 코드·토큰·진행 중 interaction.
+ * 로그아웃·관리자 세션 종료·비활성화 때 부른다 — sessions 테이블만 지우면 브라우저의 OP 세션이 남아
+ * authorization code 가 계속 나간다. 저장소가 메모리라 이 프로세스 안에서 바로 끝난다.
+ * 지운 항목 수를 돌려준다.
+ */
+export function revokeAccount(accountId: string): number {
+  let removed = 0;
+  for (const [name, s] of stores) {
+    if (name === 'Client') continue;
+    for (const [id, entry] of s) {
+      const p = entry.payload as {
+        accountId?: string;
+        session?: { accountId?: string };
+        result?: { login?: { accountId?: string } };
+      };
+      const owner = p.accountId ?? p.session?.accountId ?? p.result?.login?.accountId;
+      if (owner !== accountId) continue;
+      s.delete(id);
+      if (name === 'Grant') grantIndex.delete(id);
+      removed++;
+    }
+  }
+  return removed;
+}
+
 async function findClient(clientId: string): Promise<Record<string, unknown> | undefined> {
   const { rows } = await query<{
     client_id: string;

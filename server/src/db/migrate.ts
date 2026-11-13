@@ -111,33 +111,83 @@ const migrations: { name: string; sql: string }[] = [
       ALTER TABLE sessions ALTER COLUMN absolute_expires_at SET NOT NULL;
     `,
   },
+  {
+    name: '007_revoked_before',
+    sql: `
+      -- 회수 전파(GET /internal/account): 이 시각 이전에 발급된 앱 세션·토큰은 무효.
+      -- NULL 허용·기본값 없음이라 기존 행을 다시 쓰지 않는다(메타데이터만 바뀜).
+      ALTER TABLE users ADD COLUMN revoked_before TIMESTAMPTZ;
+    `,
+  },
+  {
+    name: '008_app_access',
+    sql: `
+      -- 앱별 접근 정책. app_key 는 forward-auth 호스트(소문자) 또는 'oidc:<client_id>'.
+      -- 행이 없거나 mode='all' 이면 활성 사용자 전원 허용(배포만으로는 동작이 바뀌지 않는다).
+      CREATE TABLE app_policies (
+        app_key TEXT PRIMARY KEY,
+        mode TEXT NOT NULL DEFAULT 'all' CHECK (mode IN ('all', 'restricted')),
+        note TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE app_access (
+        app_key TEXT NOT NULL REFERENCES app_policies(app_key) ON DELETE CASCADE,
+        user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (app_key, user_id)
+      );
+    `,
+  },
+  {
+    name: '009_admin_events',
+    sql: `
+      -- 관리자 작업 감사 로그. 시크릿 값은 절대 detail 에 넣지 않는다.
+      CREATE TABLE admin_events (
+        id BIGSERIAL PRIMARY KEY,
+        actor_id INT REFERENCES users(id) ON DELETE SET NULL,
+        actor_email TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT NOT NULL DEFAULT '',
+        detail JSONB NOT NULL DEFAULT '{}',
+        ip TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX admin_events_created ON admin_events (created_at DESC);
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-  const { rows } = await pool.query<{ name: string }>('SELECT name FROM _migrations');
-  const applied = new Set(rows.map((r) => r.name));
+  // 한 연결에서 advisory lock 을 잡고 전부 돌린다. 여러 프로세스(동시에 뜨는 테스트 파일들, 겹쳐 뜨는 컨테이너)가
+  // 같은 마이그레이션을 동시에 적용하려다 "already exists" 로 죽지 않게 — 늦게 온 쪽은 기다렸다가 적용 목록을 다시 읽는다.
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock(727001)');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS _migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    const { rows } = await client.query<{ name: string }>('SELECT name FROM _migrations');
+    const applied = new Set(rows.map((r) => r.name));
 
-  for (const m of migrations) {
-    if (applied.has(m.name)) continue;
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(m.sql);
-      await client.query('INSERT INTO _migrations (name) VALUES ($1)', [m.name]);
-      await client.query('COMMIT');
-      console.log(`migrated: ${m.name}`);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    for (const m of migrations) {
+      if (applied.has(m.name)) continue;
+      try {
+        await client.query('BEGIN');
+        await client.query(m.sql);
+        await client.query('INSERT INTO _migrations (name) VALUES ($1)', [m.name]);
+        await client.query('COMMIT');
+        console.log(`migrated: ${m.name}`);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
     }
+  } finally {
+    await client.query('SELECT pg_advisory_unlock(727001)').catch(() => {});
+    client.release();
   }
 }
 

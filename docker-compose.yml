@@ -44,6 +44,11 @@ services:
       GATEHOUSE_ZT_TIMEOUT_MS: ${GATEHOUSE_ZT_TIMEOUT_MS:-1000}
       GATEHOUSE_ZT_EXEMPT_EMAILS: ${GATEHOUSE_ZT_EXEMPT_EMAILS:-}
       GATEHOUSE_ZT_EXEMPT_HOSTS: ${GATEHOUSE_ZT_EXEMPT_HOSTS:-}
+      # 전역이 monitor 여도 이 사용자들만 enforce (단계적 전환용)
+      GATEHOUSE_ZT_ENFORCE_EMAILS: ${GATEHOUSE_ZT_ENFORCE_EMAILS:-}
+      GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS: ${GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS:-}
+      # 앱들이 계정 상태(/internal/account)를 물을 때 쓰는 공유 시크릿. 없으면 라우트가 없다.
+      GATEHOUSE_INTERNAL_SECRET: ${GATEHOUSE_INTERNAL_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy

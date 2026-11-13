@@ -52,6 +52,23 @@ export function ZtPage() {
             면제 이메일: {cfg.exempt_emails.length ? cfg.exempt_emails.join(', ') : '없음'} · 면제 호스트:{' '}
             {cfg.exempt_hosts.length ? cfg.exempt_hosts.join(', ') : '없음'}
           </div>
+          <div className="small">
+            <b>사용자별 차단(enforce)</b>{' '}
+            {cfg.enforce_count > 0 ? (
+              <>
+                <span className="badge zt-enforce">{cfg.enforce_count}명</span>{' '}
+                <span className="muted">{cfg.enforce_emails.join(', ')}</span>
+                {cfg.mode === 'off' && <span className="muted"> · 전역 모드가 꺼져 있어 적용되지 않습니다</span>}
+                {cfg.mode === 'enforce' && <span className="muted"> · 전역 모드가 차단이라 전원에게 적용됩니다</span>}
+              </>
+            ) : (
+              <span className="muted">없음</span>
+            )}
+          </div>
+          <div className="muted small">
+            OIDC 로그인: 차단 대상 사용자는 웹 클라이언트 로그인도 막습니다. device grant 클라이언트(CLI·VPN)는 기록만
+            {cfg.oidc_exempt_clients.length > 0 && <> · 추가 제외: {cfg.oidc_exempt_clients.join(', ')}</>}
+          </div>
           <div className="muted small">설정은 환경 변수(GATEHOUSE_ZT_*)로 바꿉니다. 여기서는 읽기만 됩니다.</div>
         </div>
       )}

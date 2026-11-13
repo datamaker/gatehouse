@@ -59,6 +59,11 @@ export const config = {
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean),
   /**
+   * 계정 상태 조회(`GET /internal/account`)용 공유 시크릿. 비어 있으면 라우트 자체를 등록하지 않는다(404).
+   * 자체 세션·토큰을 가진 앱이 이 값으로 비활성화·세션 종료를 1분 안에 따라온다.
+   */
+  internalSecret: process.env.GATEHOUSE_INTERNAL_SECRET ?? '',
+  /**
    * 제로트러스트(ward 디바이스 상태 판정). off 면 아무것도 하지 않는다.
    * monitor 는 기록만, enforce 는 compliant 기기에서만 forward-auth 를 통과시킨다.
    */
@@ -72,6 +77,10 @@ export const config = {
     timeoutMs: parseInt(process.env.GATEHOUSE_ZT_TIMEOUT_MS ?? '1000', 10),
     exemptEmails: list(process.env.GATEHOUSE_ZT_EXEMPT_EMAILS),
     exemptHosts: list(process.env.GATEHOUSE_ZT_EXEMPT_HOSTS),
+    /** 전역 모드가 monitor 여도 이 사용자들에게는 enforce 를 적용한다(전역 off 면 아무 효과 없음). */
+    enforceEmails: list(process.env.GATEHOUSE_ZT_ENFORCE_EMAILS),
+    /** OIDC 로그인 단계에서 기기 판정으로 막지 않을 client_id (device grant 클라이언트는 자동으로 제외된다). */
+    oidcExemptClients: list(process.env.GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS),
     /** 사용자에게 보여 줄 ward 콘솔 주소. */
     wardPublicUrl: process.env.GATEHOUSE_WARD_PUBLIC_URL ?? 'https://ward.datasee.co.kr',
   },

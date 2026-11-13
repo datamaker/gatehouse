@@ -78,7 +78,7 @@ export function UsersPage({ me }: { me: Me }) {
               <td>
                 <button
                   className="ghost small"
-                  disabled={u.active_sessions === 0}
+                  title="gatehouse 세션과 OIDC 세션을 끊고, 연동된 앱의 기존 세션·토큰도 1분 안에 무효화합니다"
                   onClick={() => act(() => api.revokeSessions(u.id))}
                 >
                   세션 종료
