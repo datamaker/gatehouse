@@ -10,6 +10,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # session.test.ts 는 실제 Postgres 로 sliding 세션의 CTE·상한을 검증한다(가짜 DB 로는 못 본다).
+    # 2026-11-05 에 그 테스트를 넣으면서 CI 에 DB 와 필수 env 를 안 넣어 계속 깨졌다.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gatehouse
+          POSTGRES_PASSWORD: gatehouse
+          POSTGRES_DB: gatehouse
+        ports: ['5435:5432']
+        options: >-
+          --health-cmd "pg_isready -U gatehouse" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://gatehouse:gatehouse@localhost:5435/gatehouse
+      # config.ts 가 부팅 때 요구하는 값. 테스트는 Google 을 부르지 않으므로 더미면 된다.
+      GOOGLE_CLIENT_ID: ci-dummy
+      GOOGLE_CLIENT_SECRET: ci-dummy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
