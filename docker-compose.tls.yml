@@ -12,20 +12,25 @@ services:
     volumes:
       - ./deploy:/etc/nginx/conf.d:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # 저장소에 넣지 않는 nginx 조각(프록시 공유 시크릿). 없으면 include 가 조용히 빈다 → 앱이 X-Auth-* 를 안 믿는다.
+      - ./secrets:/etc/nginx/secrets:ro
     depends_on:
       - gatehouse
     networks:
-      - default
-      - redash
-      - pgsearch
-      - vault
-      - lookout
-      - mailroom
-      - lobby
-      - notebook
-      - ward
-      - forager
-      - census
+      # 호스트로 나갈 때(VPN 패널 11.0.1.21:8080)의 출발 주소를 gatehouse 네트워크로 고정한다. 지정하지 않으면
+      # 이름순 첫 네트워크(census_default)로 나가 방화벽·신뢰 대역을 예측할 수 없다(2026-11-13 패널 접속 차단 사고).
+      default:
+        gw_priority: 100
+      redash:
+      pgsearch:
+      vault:
+      lookout:
+      mailroom:
+      lobby:
+      notebook:
+      ward:
+      forager:
+      census:
     restart: unless-stopped
 
   # 제로트러스트: gatehouse 가 ward 컨테이너(/api/zt/posture)를 직접 부른다(nginx 를 거치면 SSO 벽에 걸린다).
