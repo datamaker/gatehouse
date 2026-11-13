@@ -68,6 +68,7 @@ export interface ZtConfig {
   timeout_ms: number;
   exempt_emails: string[];
   exempt_hosts: string[];
+  soft_hosts: string[];
   enforce_emails: string[];
   enforce_count: number;
   oidc_exempt_clients: string[];
@@ -110,7 +111,11 @@ export interface ZtCheck {
   device_hostname: string | null;
   mode: string;
   allowed: boolean;
+  /** 소프트 호스트라 통과시켰지만 기기 판정은 거부였다. */
+  restricted: boolean;
   error: string | null;
+  /** ward 의 기계용 사유(예: agent_offline). */
+  reason: string | null;
   created_at: string;
 }
 

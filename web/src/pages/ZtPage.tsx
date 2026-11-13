@@ -10,6 +10,9 @@ const VERDICT: Record<string, string> = {
   exempt: '면제',
 };
 
+// ward 가 verdict 에 덧붙이는 기계용 사유. 모르는 값은 그대로 보여 준다.
+const REASON: Record<string, string> = { agent_offline: '에이전트 오프라인(최근 3분 미보고)' };
+
 const MODE: Record<string, string> = { off: '꺼짐', monitor: '기록만', enforce: '차단' };
 
 export function ZtPage() {
@@ -50,7 +53,9 @@ export function ZtPage() {
           </div>
           <div className="muted small">
             면제 이메일: {cfg.exempt_emails.length ? cfg.exempt_emails.join(', ') : '없음'} · 면제 호스트:{' '}
-            {cfg.exempt_hosts.length ? cfg.exempt_hosts.join(', ') : '없음'}
+            {cfg.exempt_hosts.length ? cfg.exempt_hosts.join(', ') : '없음'} · 제한 접근 호스트:{' '}
+            {cfg.soft_hosts.length ? cfg.soft_hosts.join(', ') : '없음'}
+            {cfg.soft_hosts.length > 0 && ' (차단 대신 통과시키고 앱이 권한을 줄입니다)'}
           </div>
           <div className="small">
             <b>사용자별 차단(enforce)</b>{' '}
@@ -97,7 +102,7 @@ export function ZtPage() {
         </thead>
         <tbody>
           {checks.map((c) => (
-            <tr key={c.id} className={c.allowed ? '' : 'denied-row'}>
+            <tr key={c.id} className={c.allowed ? (c.restricted ? 'restricted-row' : '') : 'denied-row'}>
               <td className="nowrap" data-label="시각">
                 {new Date(c.created_at).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'medium' })}
               </td>
@@ -106,6 +111,8 @@ export function ZtPage() {
                   {VERDICT[c.verdict] ?? c.verdict}
                   {!c.allowed && ' · 차단됨'}
                 </span>
+                {c.restricted && <span className="badge zt-restricted">제한 접근</span>}
+                {c.reason && <div className="muted small">{REASON[c.reason] ?? c.reason}</div>}
                 {c.error && <div className="muted small">{c.error}</div>}
               </td>
               <td data-label="이메일">{c.email}</td>

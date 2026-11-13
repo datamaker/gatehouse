@@ -77,6 +77,11 @@ export const config = {
     timeoutMs: parseInt(process.env.GATEHOUSE_ZT_TIMEOUT_MS ?? '1000', 10),
     exemptEmails: list(process.env.GATEHOUSE_ZT_EXEMPT_EMAILS),
     exemptHosts: list(process.env.GATEHOUSE_ZT_EXEMPT_HOSTS),
+    /**
+     * "막지 않고 제한"할 앱 호스트(면제 호스트와 같은 매칭 규칙, `*.` 와일드카드 가능). enforce 에서 거부될 판정이어도
+     * 200 을 주되 `X-Auth-Device-Restricted: 1` 을 싣는다. 판정·기록은 그대로 한다(면제가 아니다).
+     */
+    softHosts: list(process.env.GATEHOUSE_ZT_SOFT_HOSTS),
     /** 전역 모드가 monitor 여도 이 사용자들에게는 enforce 를 적용한다(전역 off 면 아무 효과 없음). */
     enforceEmails: list(process.env.GATEHOUSE_ZT_ENFORCE_EMAILS),
     /** OIDC 로그인 단계에서 기기 판정으로 막지 않을 client_id (device grant 클라이언트는 자동으로 제외된다). */

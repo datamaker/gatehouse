@@ -5,8 +5,8 @@ import { ZeroTrust, type ZtCheckInput, type ZtResult } from './zt.js';
 /** 판정 기록. monitor/enforce 모두 사용자+IP+앱(host) 마다 캐시 TTL 에 1건. */
 async function recordCheck(input: ZtCheckInput, r: ZtResult): Promise<void> {
   await query(
-    `INSERT INTO zt_checks (email, host, ip, verdict, device_id, device_hostname, mode, allowed, error)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO zt_checks (email, host, ip, verdict, device_id, device_hostname, mode, allowed, error, reason, restricted)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       input.email,
       input.host,
@@ -17,6 +17,8 @@ async function recordCheck(input: ZtCheckInput, r: ZtResult): Promise<void> {
       r.mode,
       r.allowed,
       r.error ?? null,
+      r.reason ?? null,
+      r.restricted,
     ],
   );
 }
@@ -31,6 +33,7 @@ export const zeroTrust = new ZeroTrust(
     timeoutMs: config.zt.timeoutMs,
     exemptEmails: config.zt.exemptEmails,
     exemptHosts: config.zt.exemptHosts,
+    softHosts: config.zt.softHosts,
     enforceEmails: config.zt.enforceEmails,
   },
   recordCheck,

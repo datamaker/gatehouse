@@ -423,6 +423,8 @@ export function registerAdminRoutes(app: FastifyInstance): void {
       timeout_ms: z.timeoutMs,
       exempt_emails: z.exemptEmails,
       exempt_hosts: z.exemptHosts,
+      // 막지 않고 제한하는 호스트(enforce 에서 거부될 판정이어도 통과 + X-Auth-Device-Restricted: 1).
+      soft_hosts: z.softHosts,
       // 전역 모드와 별개로 enforce 가 적용되는 사용자(전역이 off 면 효과 없음).
       enforce_emails: [...zeroTrust.enforceEmails],
       enforce_count: zeroTrust.enforceEmails.length,
@@ -444,7 +446,8 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     if (denied === '1') where.push('allowed = false');
     params.push(n);
     const { rows } = await query(
-      `SELECT id, email, host, ip, verdict, device_id, device_hostname, mode, allowed, error, created_at
+      `SELECT id, email, host, ip, verdict, device_id, device_hostname, mode, allowed, error, reason,
+              COALESCE(restricted, false) AS restricted, created_at
        FROM zt_checks ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
        ORDER BY id DESC LIMIT $${params.length}`,
       params,

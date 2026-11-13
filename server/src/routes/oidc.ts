@@ -45,7 +45,7 @@ export function registerOidcRoutes(app: FastifyInstance): void {
       const html =
         gate.reason === 'app_access'
           ? appDeniedPage({ app: await clientName(clientId), email: user.email })
-          : deniedPage({ verdict: gate.zt.verdict, wardUrl: config.zt.wardPublicUrl, hostname: gate.zt.device?.hostname });
+          : deniedPage({ verdict: gate.zt.verdict, reason: gate.zt.reason, wardUrl: config.zt.wardPublicUrl, hostname: gate.zt.device?.hostname });
       // interaction 은 끝내지 않는다(코드·토큰이 나가지 않는다). 조치 뒤 이 주소를 새로 고치면 다시 판정한다(10분 안).
       return reply
         .code(403)

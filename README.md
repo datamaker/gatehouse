@@ -57,6 +57,7 @@
 | `GATEHOUSE_ZT_TIMEOUT_MS` | ward 조회 타임아웃 | `1000` |
 | `GATEHOUSE_ZT_EXEMPT_EMAILS` | 판정 면제 이메일 (comma) | (없음) |
 | `GATEHOUSE_ZT_EXEMPT_HOSTS` | 판정 면제 앱 호스트 (comma, `*.` 와일드카드 가능) | (없음) |
+| `GATEHOUSE_ZT_SOFT_HOSTS` | "막지 않고 제한"할 앱 호스트 (comma, `*.` 와일드카드 가능). `enforce` 에서 거부될 판정이어도 200 + `X-Auth-Device-Restricted: 1`. 면제가 아니라 판정·기록은 그대로 | (없음) |
 | `GATEHOUSE_ZT_ENFORCE_EMAILS` | 전역 모드가 `monitor` 여도 `enforce` 를 적용할 사용자 (comma, 대소문자 무시). 전역 `off` 면 효과 없음 | (없음) |
 | `GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS` | OIDC 로그인 단계에서 기기 판정으로 막지 않을 client_id (comma). device grant 클라이언트는 자동 제외 | (없음) |
 | `GATEHOUSE_INTERNAL_SECRET` | `GET /internal/account`(계정 상태 조회) 공유 시크릿. 비어 있으면 라우트가 없다(404) | (없음) |
@@ -86,14 +87,23 @@ forward-auth 판정에 "사람"뿐 아니라 "기기 상태"를 넣는다. ward(
 - 모드: `monitor` 는 판정을 `zt_checks` 에 기록만 하고 통과시킨다(먼저 이걸로 한두 주 돌려 거부될 사람을 본다). `enforce` 는 `compliant` 일 때만 200,
   그 외(`noncompliant`, `unknown`, `no_device`)는 403. ward 가 안 닿거나 1초를 넘기면 `GATEHOUSE_ZT_FAIL_OPEN` 대로.
 - forward-auth 는 요청마다 불리지만 사용자+IP 로 60초 캐시하므로 ward 는 분당 1회만 맞고, 기록도 그때 1건만 남는다.
-- 앱에는 `X-Auth-Device`(ward 디바이스 id)·`X-Auth-Device-Status` 헤더가 추가로 간다.
+- 앱에는 `X-Auth-Device`(ward 디바이스 id)·`X-Auth-Device-Status`·`X-Auth-Device-Restricted`(`0`/`1`) 헤더가 추가로 간다.
+- 거부(403) 응답에는 `X-Auth-Denied: <noncompliant|unknown|no_device|error|app_access>` 와, ward 가 사유를 줬으면
+  `X-Auth-Denied-Reason: <reason>`(지금은 `agent_offline` — 에이전트가 최근 3분간 보고하지 않음)이 붙는다. 사유는 `^[a-z_]{1,40}$` 만 받고 `zt_checks.reason` 에도 남는다.
+- 제한 접근(소프트 호스트): `GATEHOUSE_ZT_SOFT_HOSTS` 의 앱은 실효 모드가 `enforce` 이고 판정이 거부여도 `/auth/verify` 가 200 을 주고
+  `X-Auth-Device-Restricted: 1` 을 싣는다(`X-Auth-Device-Status` 는 실제 판정 그대로). 미준수 사용자가 ward 콘솔에서 무엇을 고쳐야 하는지는
+  볼 수 있어야 하기 때문이고, 그 세션이 할 수 있는 일을 줄이는 것은 앱의 몫이다. 기록은 `allowed = true`, `restricted = true` 로 남고
+  콘솔에 "제한 접근"으로 보인다. 면제 호스트·면제 이메일이 소프트 호스트보다 우선하고, 앱 접근 정책 거부는 소프트 호스트여도 그대로 403 이다.
+  nginx 는 `auth_request_set` 으로 받은 값을 `proxy_set_header X-Auth-Device-Restricted` 로 **항상** 덮어써야 한다(클라이언트가 보낸 값이 앱에 닿지 않게).
 - 선택 사용자만 차단: 전역은 `monitor` 로 둔 채 `GATEHOUSE_ZT_ENFORCE_EMAILS` 에 넣은 사용자에게만 `enforce` 를 적용한다
   (`zt_checks.mode` 에는 그 사용자에게 실제로 적용된 모드가 남는다). 면제(`EXEMPT_*`)가 이 목록보다 우선하고, fail-open 설정은 그대로 따른다.
 - OIDC 로그인: 실효 모드가 `enforce` 인 사용자는 `authorization_code` 웹 클라이언트 로그인도 막는다(거부 안내 페이지, 코드 미발급).
   device grant 를 쓰는 클라이언트(CLI·VPN·에이전트)는 승인하는 브라우저와 기기의 IP 가 달라 막지 않고 기록만 하며,
   `GATEHOUSE_ZT_OIDC_EXEMPT_CLIENTS` 로 클라이언트를 더 뺄 수 있다. 그 외에는 지금처럼 기록만 한다.
 - 거부 안내: 앱 nginx 에 `error_page 403 = @zt_denied;` 와 `deploy/snippets/zt-denied.conf` 의 named location 을 넣으면
-  `/auth/denied` 가 사유(기기 없음·미준수·ward 오류)와 조치 방법을 보여 주고, 그 사이 준수로 바뀌면 원래 주소로 돌려보낸다.
+  `/auth/denied?rd=<원래 주소>&v=<X-Auth-Denied 값>&r=<X-Auth-Denied-Reason 값>` 이 사유(기기 없음·미준수·미확인·에이전트 오프라인·ward 오류)와
+  조치 방법을 보여 준다. 인증 호스트는 공인 인터넷으로 들어와 요청 IP 가 VPN IP 와 다르므로 이 페이지는 기기 판정을 다시 하지 않고,
+  nginx 가 넘긴 `v`·`r`(허용 목록 밖의 값은 무시)만 쓴다. "다시 시도" 버튼과 20초마다의 자동 재시도(최대 15회)가 `rd` 로 돌아가 다시 판정받는다.
 - 관리 콘솔 "제로트러스트" 탭에서 판정 기록(이메일·앱·IP·기기·판정)과 현재 설정을 본다. 설정은 env 로만 바꾼다.
 
 테스트: `npm test` — 가짜 ward 서버로 off/monitor/enforce × 준수/미준수/기기없음/장애(fail-open·closed)/타임아웃/캐시/면제/사용자별 enforce 를 검증한다.

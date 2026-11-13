@@ -508,6 +508,8 @@ td code {
 .badge.zt-exempt, .badge.zt-off, .badge.zt-monitor { background: #e5e7eb; color: #374151; }
 .badge.zt-enforce { background: #dbeafe; color: #1e40af; }
 .denied-row td { background: rgba(239, 68, 68, 0.06); }
+.badge.zt-restricted { background: #ffedd5; color: #9a3412; margin-left: 4px; }
+.restricted-row td { background: rgba(249, 115, 22, 0.06); }
 
 /* 감사 로그 보기 전환 · 앱 접근 페이지 */
 .segmented { display: inline-flex; border: 1px solid #d5d8dc; border-radius: 8px; overflow: hidden; flex: none; }

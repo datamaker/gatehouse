@@ -155,6 +155,16 @@ const migrations: { name: string; sql: string }[] = [
       CREATE INDEX admin_events_created ON admin_events (created_at DESC);
     `,
   },
+  {
+    name: '010_zt_reason_restricted',
+    sql: `
+      -- reason: ward 가 verdict 에 덧붙인 기계용 사유(예: agent_offline). restricted: 소프트 호스트라 통과시켰지만 원래는 거부될 판정.
+      -- 둘 다 NULL 허용이고 기본값은 상수라 기존 행을 다시 쓰지 않는다(PG 11+ 에서 메타데이터만 바뀜). 옛 행은 reason NULL · restricted false 로 읽힌다.
+      ALTER TABLE zt_checks
+        ADD COLUMN reason TEXT,
+        ADD COLUMN restricted BOOLEAN DEFAULT false;
+    `,
+  },
 ];
 
 export async function migrate(): Promise<void> {

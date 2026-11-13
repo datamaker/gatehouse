@@ -1,7 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { ZeroTrust, decide, deniedPage, effectiveMode, fetchPosture, pickDevice, type ZtCheckInput, type ZtDevice, type ZtOptions, type ZtResult } from './zt.js';
+import { DENIED_RETRY_MAX, DENIED_RETRY_SEC, ZeroTrust, decide, decideAccess, deniedCsp, deniedPage, effectiveMode, fetchPosture, parseDeniedReason, parseDeniedVerdict, parseReason, pickDevice, type ZtCheckInput, type ZtDevice, type ZtOptions, type ZtResult } from './zt.js';
 
 // 가짜 ward. 이메일별로 응답을 정해 두고, 호출 횟수·지연·오류를 흉내 낸다.
 let server: http.Server;
@@ -31,6 +31,11 @@ before(async () => {
       if (email === 'good@datasee.co.kr') { res.end(JSON.stringify({ devices: [devices.mine, devices.other, devices.old], verdict: 'compliant' })); return; }
       if (email === 'bad@datasee.co.kr') { res.end(JSON.stringify({ devices: [{ ...devices.mine, posture_status: 'noncompliant' }], verdict: 'noncompliant' })); return; }
       if (email === 'nodev@datasee.co.kr') { res.end(JSON.stringify({ devices: [devices.other], verdict: 'no_device' })); return; }
+      // 에이전트가 최근에 보고하지 않은 기기: ward 가 unknown 에 사유를 붙인다.
+      if (email === 'offline@datasee.co.kr') { res.end(JSON.stringify({ devices: [{ ...devices.mine, online: false }], verdict: 'unknown', reason: 'agent_offline', online: false, last_seen_at: '2026-11-03T10:00:00Z' })); return; }
+      // 형식이 틀린 사유(헤더 주입 시도 포함)는 버려져야 한다.
+      if (email === 'badreason@datasee.co.kr') { res.end(JSON.stringify({ devices: [], verdict: 'unknown', reason: 'Agent-Offline\r\nX-Evil: 1' })); return; }
+      if (email === 'numreason@datasee.co.kr') { res.end(JSON.stringify({ devices: [], verdict: 'unknown', reason: 42 })); return; }
       res.writeHead(404); res.end(JSON.stringify({ error: 'no such user' }));
     };
     if (delayMs) setTimeout(respond, delayMs); else respond();
@@ -258,10 +263,182 @@ describe('ZeroTrust: 선택 사용자만 enforce', () => {
   });
 });
 
+describe('ward 사유(reason)', () => {
+  test('parseReason: 소문자·밑줄 1~40자만', () => {
+    assert.equal(parseReason('agent_offline'), 'agent_offline');
+    assert.equal(parseReason('a'.repeat(40)), 'a'.repeat(40));
+    for (const bad of ['', 'a'.repeat(41), 'Agent_offline', 'agent-offline', 'agent offline', 'agent_offline\n', 'a1', 'x\r\nY: 1', 42, null, undefined, ['agent_offline'], {}]) {
+      assert.equal(parseReason(bad), undefined, JSON.stringify(bad));
+    }
+  });
+
+  test('fetchPosture: 사유를 싣고, 형식이 틀리면 버린다(verdict 는 그대로)', async () => {
+    const o = { wardUrl, wardSecret: SECRET, timeoutMs: 300 };
+    const off = await fetchPosture(o, 'offline@datasee.co.kr', '10.0.0.5');
+    assert.ok(off.ok && off.posture.verdict === 'unknown' && off.posture.reason === 'agent_offline');
+    const bad = await fetchPosture(o, 'badreason@datasee.co.kr', '10.0.0.5');
+    assert.ok(bad.ok && bad.posture.verdict === 'unknown' && !('reason' in bad.posture));
+    const num = await fetchPosture(o, 'numreason@datasee.co.kr', '10.0.0.5');
+    assert.ok(num.ok && !('reason' in num.posture));
+    const good = await fetchPosture(o, 'good@datasee.co.kr', '10.0.0.5');
+    assert.ok(good.ok && !('reason' in good.posture));
+  });
+
+  test('check: 사유가 결과·기록·캐시된 결과에 모두 남는다', async () => {
+    const recorded: ZtResult[] = [];
+    const zt = new ZeroTrust(opts(), (_i, r) => { recorded.push(r); });
+    const before = calls;
+    const first = await zt.check(input('offline@datasee.co.kr'));
+    assert.equal(first.allowed, false); assert.equal(first.verdict, 'unknown'); assert.equal(first.reason, 'agent_offline');
+    const cached = await zt.check(input('offline@datasee.co.kr', 'vault.datasee.co.kr'));
+    assert.equal(calls - before, 1); assert.equal(cached.cached, true); assert.equal(cached.reason, 'agent_offline');
+    assert.deepEqual(recorded.map((r) => r.reason), ['agent_offline', 'agent_offline']);
+    const none = await zt.check(input('bad@datasee.co.kr'));
+    assert.equal('reason' in none, false);
+    assert.equal('reason' in (await zt.check(input('badreason@datasee.co.kr'))), false);
+  });
+});
+
+describe('소프트 호스트(막지 않고 제한)', () => {
+  test('decideAccess: enforce + 거부 판정 + 소프트 → 통과·제한, 그 외에는 제한 아님', () => {
+    for (const v of ['noncompliant', 'unknown', 'no_device'] as const) {
+      assert.deepEqual(decideAccess('enforce', v, true, true), { allowed: true, restricted: true }, v);
+      assert.deepEqual(decideAccess('enforce', v, true, false), { allowed: false, restricted: false }, v);
+      assert.deepEqual(decideAccess('monitor', v, true, true), { allowed: true, restricted: false }, v);
+      assert.deepEqual(decideAccess('off', v, true, true), { allowed: true, restricted: false }, v);
+    }
+    assert.deepEqual(decideAccess('enforce', 'compliant', true, true), { allowed: true, restricted: false });
+    assert.deepEqual(decideAccess('enforce', 'exempt', false, true), { allowed: true, restricted: false });
+    // ward 장애: fail-open 이면 원래 통과라 제한 아님, fail-closed 면 거부될 것이므로 소프트 호스트에서는 제한 접근
+    assert.deepEqual(decideAccess('enforce', 'error', true, true), { allowed: true, restricted: false });
+    assert.deepEqual(decideAccess('enforce', 'error', false, true), { allowed: true, restricted: true });
+    assert.deepEqual(decideAccess('enforce', 'error', false, false), { allowed: false, restricted: false });
+  });
+
+  test('enforce: 소프트 호스트는 미준수여도 통과(restricted), 다른 호스트는 같은 캐시로도 차단. 판정·기록은 그대로', async () => {
+    const recorded: { host: string; verdict: string; allowed: boolean; restricted: boolean }[] = [];
+    const zt = new ZeroTrust(opts({ softHosts: ['ward.datasee.co.kr', '*.soft.datasee.co.kr'] }), (i, r) => {
+      recorded.push({ host: i.host, verdict: r.verdict, allowed: r.allowed, restricted: r.restricted });
+    });
+    assert.equal(zt.isSoftHost('WARD.datasee.co.kr'), true);
+    assert.equal(zt.isSoftHost('a.soft.datasee.co.kr'), true);
+    assert.equal(zt.isSoftHost('soft.datasee.co.kr'), true);
+    assert.equal(zt.isSoftHost('notward.datasee.co.kr'), false);
+    assert.equal(zt.isExempt('bad@datasee.co.kr', 'ward.datasee.co.kr'), false, '소프트 호스트는 면제가 아니다');
+
+    const before = calls;
+    const soft = await zt.check(input('bad@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(soft.mode, 'enforce'); assert.equal(soft.verdict, 'noncompliant');
+    assert.equal(soft.allowed, true); assert.equal(soft.restricted, true); assert.equal(soft.device?.id, 'dev-1');
+    const hard = await zt.check(input('bad@datasee.co.kr', 'vault.datasee.co.kr'));
+    assert.equal(hard.allowed, false); assert.equal(hard.restricted, false); assert.equal(hard.cached, true);
+    const wild = await zt.check(input('bad@datasee.co.kr', 'x.soft.datasee.co.kr'));
+    assert.equal(wild.allowed, true); assert.equal(wild.restricted, true);
+    assert.equal(calls - before, 1, 'ward 조회는 한 번');
+    assert.deepEqual(recorded, [
+      { host: 'ward.datasee.co.kr', verdict: 'noncompliant', allowed: true, restricted: true },
+      { host: 'vault.datasee.co.kr', verdict: 'noncompliant', allowed: false, restricted: false },
+      { host: 'x.soft.datasee.co.kr', verdict: 'noncompliant', allowed: true, restricted: true },
+    ]);
+
+    const nodev = await zt.check(input('nodev@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(nodev.verdict, 'no_device'); assert.equal(nodev.allowed, true); assert.equal(nodev.restricted, true);
+    const offline = await zt.check(input('offline@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(offline.restricted, true); assert.equal(offline.reason, 'agent_offline');
+  });
+
+  test('준수 기기는 소프트 호스트에서도 restricted=false', async () => {
+    const r = await new ZeroTrust(opts({ softHosts: ['ward.datasee.co.kr'] })).check(input('good@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(r.allowed, true); assert.equal(r.restricted, false); assert.equal(r.verdict, 'compliant');
+  });
+
+  test('monitor 는 소프트 호스트여도 restricted=false, 사용자별 enforce 대상만 restricted', async () => {
+    const zt = new ZeroTrust(opts({ mode: 'monitor', softHosts: ['ward.datasee.co.kr'], enforceEmails: ['nodev@datasee.co.kr'] }));
+    const mon = await zt.check(input('bad@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(mon.mode, 'monitor'); assert.equal(mon.allowed, true); assert.equal(mon.restricted, false);
+    const enf = await zt.check(input('nodev@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(enf.mode, 'enforce'); assert.equal(enf.allowed, true); assert.equal(enf.restricted, true);
+  });
+
+  test('면제가 소프트보다 우선: 면제 호스트·면제 이메일은 판정 자체를 하지 않는다', async () => {
+    const before = calls;
+    const zt = new ZeroTrust(opts({ softHosts: ['ward.datasee.co.kr'], exemptHosts: ['ward.datasee.co.kr'], exemptEmails: ['nodev@datasee.co.kr'] }));
+    const host = await zt.check(input('bad@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(host.verdict, 'exempt'); assert.equal(host.allowed, true); assert.equal(host.restricted, false);
+    const mail = await zt.check(input('nodev@datasee.co.kr', 'ward.datasee.co.kr'));
+    assert.equal(mail.verdict, 'exempt'); assert.equal(mail.restricted, false);
+    assert.equal(calls, before);
+  });
+
+  test('ward 장애 + fail-closed: 소프트 호스트는 제한 접근으로 통과, fail-open 은 제한 아님', async () => {
+    failWith = 500;
+    try {
+      const closed = await new ZeroTrust(opts({ failOpen: false, softHosts: ['ward.datasee.co.kr'] })).check(input('good@datasee.co.kr', 'ward.datasee.co.kr'));
+      assert.equal(closed.verdict, 'error'); assert.equal(closed.allowed, true); assert.equal(closed.restricted, true);
+      const open = await new ZeroTrust(opts({ failOpen: true, softHosts: ['ward.datasee.co.kr'] })).check(input('good@datasee.co.kr', 'ward.datasee.co.kr'));
+      assert.equal(open.allowed, true); assert.equal(open.restricted, false);
+    } finally {
+      failWith = null;
+    }
+  });
+
+  test('off·일반 결과에도 restricted 필드는 항상 있다(false)', async () => {
+    assert.equal((await new ZeroTrust(opts({ mode: 'off', softHosts: ['ward.datasee.co.kr'] })).check(input('bad@datasee.co.kr', 'ward.datasee.co.kr'))).restricted, false);
+    assert.equal((await new ZeroTrust(opts()).check(input('bad@datasee.co.kr'))).restricted, false);
+  });
+});
+
 describe('deniedPage', () => {
+  const W = 'https://ward.datasee.co.kr';
   test('사유별 문구와 HTML 이스케이프', () => {
-    assert.match(deniedPage({ verdict: 'no_device', wardUrl: 'https://ward.datasee.co.kr' }), /설치·등록되어 있지 않/);
+    assert.match(deniedPage({ verdict: 'no_device', wardUrl: W }), /설치·등록되어 있지 않/);
+    assert.match(deniedPage({ verdict: 'no_device', wardUrl: W }), /VPN/);
     assert.match(deniedPage({ verdict: 'noncompliant', wardUrl: 'https://w', hostname: '<x>' }), /&lt;x&gt;/);
+    assert.match(deniedPage({ verdict: 'noncompliant', wardUrl: W }), /회사 기준을 충족하지 않습니다/);
     assert.match(deniedPage({ verdict: 'error', wardUrl: 'https://w' }), /연결할 수 없습니다/);
+    assert.match(deniedPage({ verdict: 'unknown', wardUrl: W }), /아직 확인하지 못했습니다/);
+    const offline = deniedPage({ verdict: 'unknown', reason: 'agent_offline', wardUrl: W });
+    assert.match(offline, /이 PC 의 Ward 에이전트가 최근 3분간 서버에 보고하지 않았습니다/);
+    assert.match(offline, /설치 탭에서 설치\(등록\)/);
+    assert.match(offline, /1분쯤 기다리면/);
+    assert.match(offline, /판정 코드: unknown \/ agent_offline/);
+    // 사유는 unknown 일 때만 문구를 바꾼다
+    assert.doesNotMatch(deniedPage({ verdict: 'noncompliant', reason: 'agent_offline', wardUrl: W }), /최근 3분간/);
+  });
+
+  test('rd·nonce 가 있을 때만 재시도 버튼과 스크립트, 주소는 이스케이프된 href 로만 들어간다', () => {
+    const rd = 'https://note.datasee.co.kr/p?a=1&b="><script>alert(1)</script>';
+    const html = deniedPage({ verdict: 'noncompliant', wardUrl: W, rd, nonce: 'N0nce+/=' });
+    assert.match(html, /id="retry" href="https:\/\/note\.datasee\.co\.kr\/p\?a=1&amp;b=&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;">다시 시도</);
+    assert.equal(html.split('<script').length - 1, 1, '스크립트는 우리 것 하나뿐');
+    assert.match(html, /<script nonce="N0nce\+\/=">/);
+    assert.match(html, /<style nonce="N0nce\+\/=">/);
+    assert.ok(html.includes(`MAX=${DENIED_RETRY_MAX},left=${DENIED_RETRY_SEC}`));
+    assert.equal(DENIED_RETRY_SEC, 20); assert.equal(DENIED_RETRY_MAX, 15);
+    assert.match(html, /sessionStorage/);
+    assert.match(html, /Ward 콘솔 열기/);
+    // 외부 자원 없음: http(s) 주소는 재시도 href 와 ward 콘솔 링크뿐
+    assert.doesNotMatch(html, /<link|<img|src=/);
+
+    for (const h of [deniedPage({ verdict: 'noncompliant', wardUrl: W }), deniedPage({ verdict: 'noncompliant', wardUrl: W, nonce: 'n' }), deniedPage({ verdict: 'noncompliant', wardUrl: W, rd })]) {
+      assert.doesNotMatch(h, /<script|id="retry"|다시 시도</);
+      assert.match(h, /Ward 콘솔 열기/);
+    }
+  });
+
+  test('CSP: nonce 로만 인라인 허용, 나머지는 전부 막는다', () => {
+    const csp = deniedCsp('abc');
+    assert.match(csp, /default-src 'none'/);
+    assert.match(csp, /script-src 'nonce-abc'/);
+    assert.match(csp, /style-src 'nonce-abc'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|https?:/);
+  });
+
+  test('쿼리 v·r 허용 목록', () => {
+    for (const v of ['noncompliant', 'unknown', 'no_device', 'error', 'app_access']) assert.equal(parseDeniedVerdict(v), v);
+    for (const v of ['compliant', 'exempt', 'NONCOMPLIANT', '', ' unknown', '<script>', undefined, null, ['unknown'], 1]) assert.equal(parseDeniedVerdict(v), null);
+    assert.equal(parseDeniedReason('agent_offline'), 'agent_offline');
+    for (const r of ['other_reason', 'AGENT_OFFLINE', 'agent-offline', '', '<b>', undefined, ['agent_offline']]) assert.equal(parseDeniedReason(r), null);
   });
 });
